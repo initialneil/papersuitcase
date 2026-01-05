@@ -35,14 +35,16 @@ class PaperSuitecaseApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (context) => AppState()..initialize(),
-      child: MaterialApp(
-        title: 'PaperSuitecase',
-        debugShowCheckedModeBanner: false,
-        themeMode: ThemeMode.dark,
-        theme: _buildLightTheme(),
-        darkTheme: _buildDarkTheme(),
-        home: const _AppShell(),
-      ),
+      builder: (context, child) {
+        return MaterialApp(
+          title: 'PaperSuitecase',
+          debugShowCheckedModeBanner: false,
+          themeMode: context.watch<AppState>().themeMode,
+          theme: _buildLightTheme(),
+          darkTheme: _buildDarkTheme(),
+          home: const _AppShell(),
+        );
+      },
     );
   }
 

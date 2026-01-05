@@ -8,33 +8,70 @@ import '../widgets/tag_cards.dart';
 import '../widgets/paper_grid.dart';
 import '../widgets/drop_zone.dart';
 import '../widgets/import_dialog.dart';
+import '../widgets/settings_view.dart';
+import '../widgets/embedded_pdf_viewer.dart';
+import 'package:flutter/services.dart';
 
 /// Main application screen
-class MainScreen extends StatelessWidget {
+class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
+
+  @override
+  State<MainScreen> createState() => _MainScreenState();
+}
+
+class _MainScreenState extends State<MainScreen> {
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Consumer<AppState>(
       builder: (context, appState, child) {
-        return Scaffold(
-          body: DropZone(
-            onPdfFilesDropped: (paths) =>
-                _handlePdfDrop(context, paths, appState),
-            onFolderDropped: (path) =>
-                _handleFolderDrop(context, path, appState),
-            child: Row(
-              children: [
-                // Left sidebar
-                const TagSidebar(),
+        return KeyboardListener(
+          focusNode: _focusNode..requestFocus(),
+          onKeyEvent: (event) {
+            if (event is KeyDownEvent &&
+                event.logicalKey == LogicalKeyboardKey.escape) {
+              if (appState.viewingPaper != null) {
+                appState.closePaperViewer();
+              } else if (appState.isConfigMode) {
+                appState.toggleConfigMode();
+              }
+            }
+          },
+          child: Scaffold(
+            body: DropZone(
+              onPdfFilesDropped: (paths) =>
+                  _handlePdfDrop(context, paths, appState),
+              onFolderDropped: (path) =>
+                  _handleFolderDrop(context, path, appState),
+              child: Row(
+                children: [
+                  // Left sidebar
+                  const TagSidebar(),
 
-                // Main content area
-                Expanded(
-                  child: _MainContent(
-                    onImportArxiv: () => _handleArxivImport(context, appState),
+                  // Main content area
+                  Expanded(
+                    child: appState.viewingPaper != null
+                        ? EmbeddedPdfViewer(
+                            paper: appState.viewingPaper!,
+                            onBack: () => appState.closePaperViewer(),
+                          )
+                        : appState.isConfigMode
+                        ? const SettingsView()
+                        : _MainContent(
+                            onImportArxiv: () =>
+                                _handleArxivImport(context, appState),
+                          ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );

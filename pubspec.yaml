@@ -24,7 +24,7 @@ dependencies:
   path_provider: ^2.1.5
 
   # PDF text extraction
-  syncfusion_flutter_pdf: ^32.1.21
+  syncfusion_flutter_pdf: ^24.2.8
 
   # HTTP for arXiv API
   http: ^1.6.0
@@ -40,6 +40,11 @@ dependencies:
   window_manager: ^0.5.1
   pdf_render: ^1.4.12
   image: ^4.7.2
+
+  # Config & PDF Viewer
+  syncfusion_flutter_pdfviewer: ^24.2.8
+  file_selector: ^1.0.3
+  shared_preferences: ^2.2.2
 
 dev_dependencies:
   flutter_test:

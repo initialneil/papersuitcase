@@ -67,247 +67,241 @@ class _PaperCardState extends State<PaperCard> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return GestureDetector(
-      onTap: widget.onTap,
-      onDoubleTap: widget.onDoubleTap,
-      onSecondaryTapDown: (details) => _showContextMenu(context, details),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        decoration: BoxDecoration(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      decoration: BoxDecoration(
+        color: widget.isSelected
+            ? colorScheme.primary.withOpacity(0.2)
+            : colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
           color: widget.isSelected
-              ? colorScheme.primary.withOpacity(0.2)
-              : colorScheme.surface, // Cards are surface color
-          borderRadius: BorderRadius.circular(12),
-          // macOS style: Subtle border in dark mode, Shadow in light mode
-          border: Border.all(
-            color: widget.isSelected
-                ? colorScheme.primary
-                : Theme.of(context).brightness == Brightness.dark
-                ? Colors.white.withOpacity(0.1)
-                : Colors.transparent,
-            width: widget.isSelected ? 2 : 1,
-          ),
-          boxShadow: [
-            if (!widget.isSelected &&
-                Theme.of(context).brightness == Brightness.light)
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 4), // Soft drop shadow
-              ),
-          ],
+              ? colorScheme.primary
+              : Theme.of(context).brightness == Brightness.dark
+              ? Colors.white.withOpacity(0.1)
+              : Colors.transparent,
+          width: widget.isSelected ? 2 : 1,
         ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: widget.onTap,
-            borderRadius: BorderRadius.circular(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Top Half: Info
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Title row with small PDF icon
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
+        boxShadow: [
+          if (!widget.isSelected &&
+              Theme.of(context).brightness == Brightness.light)
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onTap,
+          onDoubleTap: widget.onDoubleTap,
+          onSecondaryTapDown: (details) => _showContextMenu(context, details),
+          borderRadius: BorderRadius.circular(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Top Half: Info
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Title row with small PDF icon
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.error.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            Icons.picture_as_pdf,
+                            color: Theme.of(context).colorScheme.error,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                widget.paper.title,
+                                style: Theme.of(context).textTheme.titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w600),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (widget.paper.authors != null &&
+                                  widget.paper.authors!.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  widget.paper.authors!,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withOpacity(0.6),
+                                      ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // Tags
+                    if (widget.paper.tags.isNotEmpty)
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: widget.paper.tags.map((tag) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: Theme.of(
                                 context,
-                              ).colorScheme.error.withOpacity(0.1),
+                              ).colorScheme.primaryContainer,
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: Icon(
-                              Icons.picture_as_pdf,
-                              color: Theme.of(context).colorScheme.error,
-                              size: 20,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  widget.paper.title,
-                                  style: Theme.of(context).textTheme.titleSmall
-                                      ?.copyWith(fontWeight: FontWeight.w600),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                if (widget.paper.authors != null &&
-                                    widget.paper.authors!.isNotEmpty) ...[
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    widget.paper.authors!,
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onSurface
-                                              .withOpacity(0.6),
-                                        ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      // Tags
-                      if (widget.paper.tags.isNotEmpty)
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: widget.paper.tags.map((tag) {
-                            return Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
+                            child: Text(
+                              tag.name,
+                              style: TextStyle(
+                                fontSize: 10,
                                 color: Theme.of(
                                   context,
-                                ).colorScheme.primaryContainer,
-                                borderRadius: BorderRadius.circular(8),
+                                ).colorScheme.onPrimaryContainer,
                               ),
-                              child: Text(
-                                tag.name,
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onPrimaryContainer,
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        )
-                      else
+                            ),
+                          );
+                        }).toList(),
+                      )
+                    else
+                      Text(
+                        'No tags',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withOpacity(0.4),
+                          fontStyle: FontStyle.italic,
+                          fontSize: 10,
+                        ),
+                      ),
+
+                    const SizedBox(height: 12),
+
+                    // Date and Badge
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.calendar_today_outlined,
+                          size: 14,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withOpacity(0.4),
+                        ),
+                        const SizedBox(width: 6),
                         Text(
-                          'No tags',
+                          widget.paper.formattedDate,
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
                                 color: Theme.of(
                                   context,
-                                ).colorScheme.onSurface.withOpacity(0.4),
-                                fontStyle: FontStyle.italic,
+                                ).colorScheme.onSurface.withOpacity(0.5),
                                 fontSize: 10,
                               ),
                         ),
-
-                      const SizedBox(height: 12),
-
-                      // Date and Badge
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.calendar_today_outlined,
-                            size: 14,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withOpacity(0.4),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            widget.paper.formattedDate,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurface.withOpacity(0.5),
-                                  fontSize: 10,
-                                ),
-                          ),
-                          if (widget.paper.arxivId != null) ...[
-                            const SizedBox(width: 12),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
+                        if (widget.paper.arxivId != null) ...[
+                          const SizedBox(width: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.tertiaryContainer,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'arXiv',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
                                 color: Theme.of(
                                   context,
-                                ).colorScheme.tertiaryContainer,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                'arXiv',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onTertiaryContainer,
-                                ),
+                                ).colorScheme.onTertiaryContainer,
                               ),
                             ),
-                          ],
+                          ),
                         ],
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+                  ],
                 ),
+              ),
 
-                // Bottom Half: Preview Image
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(
-                      0,
-                    ), // Full bleed attempt, but respecting border radius
-                    child: ClipRRect(
-                      borderRadius: const BorderRadius.vertical(
-                        bottom: Radius.circular(11),
-                      ), // -1 for border width
-                      child: Container(
-                        width: double.infinity,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest.withOpacity(0.3),
-                        child: _thumbnailPath != null
-                            ? Image.file(
-                                File(_thumbnailPath!),
-                                fit: BoxFit.cover,
-                                alignment: Alignment.topCenter,
-                                errorBuilder: (context, error, stackTrace) =>
-                                    Center(
-                                      child: Icon(
-                                        Icons.broken_image_outlined,
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onSurfaceVariant
-                                            .withOpacity(0.5),
-                                      ),
+              // Bottom Half: Preview Image
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(
+                    0,
+                  ), // Full bleed attempt, but respecting border radius
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(11),
+                    ), // -1 for border width
+                    child: Container(
+                      width: double.infinity,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                      child: _thumbnailPath != null
+                          ? Image.file(
+                              File(_thumbnailPath!),
+                              fit: BoxFit.cover,
+                              alignment: Alignment.topCenter,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  Center(
+                                    child: Icon(
+                                      Icons.broken_image_outlined,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant
+                                          .withOpacity(0.5),
                                     ),
-                              )
-                            : Center(
-                                child: Icon(
-                                  Icons.image_outlined,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant
-                                      .withOpacity(0.2),
-                                  size: 48,
-                                ),
+                                  ),
+                            )
+                          : Center(
+                              child: Icon(
+                                Icons.image_outlined,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant.withOpacity(0.2),
+                                size: 48,
                               ),
-                      ),
+                            ),
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

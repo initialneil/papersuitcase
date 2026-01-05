@@ -1,4 +1,7 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart' show ThemeMode;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../models/settings_enums.dart';
 
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -29,6 +32,14 @@ class AppState extends ChangeNotifier {
   String? _error;
   String? _detectedArxivUrl;
   final Set<int> _selectedPaperIds = {};
+  Paper? _viewingPaper;
+
+  // Config State
+  bool _isConfigMode = false;
+  ThemeMode _themeMode = ThemeMode.system;
+  PdfReaderType _pdfReaderType = PdfReaderType.embedded;
+  String? _customPdfAppPath;
+  List<String> _customPdfApps = [];
 
   // Getters
   List<Paper> get papers => _papers;
@@ -42,6 +53,14 @@ class AppState extends ChangeNotifier {
   String? get detectedArxivUrl => _detectedArxivUrl;
   Set<int> get selectedPaperIds => _selectedPaperIds;
   bool get isOthersSelected => _selectedTag?.isOthers ?? false;
+  Paper? get viewingPaper => _viewingPaper;
+
+  // Config Getters
+  bool get isConfigMode => _isConfigMode;
+  ThemeMode get themeMode => _themeMode;
+  PdfReaderType get pdfReaderType => _pdfReaderType;
+  String? get customPdfAppPath => _customPdfAppPath;
+  List<String> get customPdfApps => _customPdfApps;
 
   /// Initialize the app state
   Future<void> initialize() async {
@@ -50,6 +69,7 @@ class AppState extends ChangeNotifier {
 
     try {
       await DatabaseService.initialize();
+      await _loadSettings();
       await refresh();
     } catch (e) {
       _error = 'Failed to initialize: $e';
@@ -94,6 +114,64 @@ class AppState extends ChangeNotifier {
     return await _db.getUntaggedPaperCount();
   }
 
+  // Config Methods
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // Theme
+    final themeIndex = prefs.getInt('themeMode');
+    if (themeIndex != null &&
+        themeIndex >= 0 &&
+        themeIndex < ThemeMode.values.length) {
+      _themeMode = ThemeMode.values[themeIndex];
+    }
+
+    // PDF Reader
+    final pdfTypeIndex = prefs.getInt('pdfReaderType');
+    if (pdfTypeIndex != null &&
+        pdfTypeIndex >= 0 &&
+        pdfTypeIndex < PdfReaderType.values.length) {
+      _pdfReaderType = PdfReaderType.values[pdfTypeIndex];
+    }
+
+    _customPdfAppPath = prefs.getString('customPdfAppPath');
+    _customPdfApps = prefs.getStringList('customPdfApps') ?? [];
+  }
+
+  void toggleConfigMode() {
+    _isConfigMode = !_isConfigMode;
+    if (_isConfigMode) {
+      _viewingPaper = null; // Exit viewer if entering config
+    }
+    notifyListeners();
+  }
+
+  Future<void> setThemeMode(ThemeMode mode) async {
+    _themeMode = mode;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('themeMode', mode.index);
+  }
+
+  Future<void> setPdfReaderType(PdfReaderType type) async {
+    _pdfReaderType = type;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('pdfReaderType', type.index);
+  }
+
+  Future<void> setCustomPdfAppPath(String path) async {
+    _customPdfAppPath = path;
+    if (!_customPdfApps.contains(path)) {
+      _customPdfApps.add(path);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('customPdfApps', _customPdfApps);
+    }
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('customPdfAppPath', path);
+  }
   // ==================== Tag Selection ====================
 
   /// Select a tag to filter papers
@@ -413,9 +491,28 @@ class AppState extends ChangeNotifier {
     await refresh();
   }
 
-  /// Open paper with system PDF viewer
+  /// Open paper with preferred PDF viewer
   Future<bool> openPaper(Paper paper) async {
-    return await PdfService.openWithSystemViewer(paper.filePath);
+    if (_pdfReaderType == PdfReaderType.embedded) {
+      _viewingPaper = paper;
+      _isConfigMode = false;
+      notifyListeners();
+      return true;
+    } else if (_pdfReaderType == PdfReaderType.custom &&
+        _customPdfAppPath != null) {
+      return await PdfService.openWithCustomApp(
+        paper.filePath,
+        _customPdfAppPath!,
+      );
+    } else {
+      return await PdfService.openWithSystemViewer(paper.filePath);
+    }
+  }
+
+  /// Close embedded viewer
+  void closePaperViewer() {
+    _viewingPaper = null;
+    notifyListeners();
   }
 
   /// Reveal paper in Finder

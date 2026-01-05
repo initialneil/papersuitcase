@@ -59,7 +59,7 @@ class _TagSidebarState extends State<TagSidebar> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'Tags',
+                      appState.isConfigMode ? 'Settings' : 'Tags',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
@@ -69,58 +69,100 @@ class _TagSidebarState extends State<TagSidebar> {
               ),
               const Divider(height: 1),
 
-              // Tag tree
+              // Content: Config Nav or Tag Tree
               Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  children: [
-                    // All Papers option
-                    _AllPapersItem(
-                      isSelected:
-                          appState.selectedTag == null &&
-                          appState.searchQuery.isEmpty,
-                      onTap: () => appState.clearSelection(),
-                    ),
+                child: appState.isConfigMode
+                    ? _ConfigNavigation(
+                        selectedCategory:
+                            'Theme', // TODO: Add category state if needed
+                        onSelect: (category) {},
+                      )
+                    : ListView(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        children: [
+                          // All Papers option
+                          _AllPapersItem(
+                            isSelected:
+                                appState.selectedTag == null &&
+                                appState.searchQuery.isEmpty,
+                            onTap: () => appState.clearSelection(),
+                          ),
 
-                    const SizedBox(height: 8),
+                          const SizedBox(height: 8),
 
-                    // Tag tree
-                    ...appState.tagTree.map(
-                      (tag) => _TagTreeItem(
-                        tag: tag,
-                        level: 0,
-                        selectedTag: appState.selectedTag,
-                        onTap: () => appState.selectTag(tag),
-                        onToggleExpand: () => appState.toggleTagExpansion(tag),
+                          // Tag tree
+                          ...appState.tagTree.map(
+                            (tag) => _TagTreeItem(
+                              tag: tag,
+                              level: 0,
+                              selectedTag: appState.selectedTag,
+                              onTap: () => appState.selectTag(tag),
+                              onToggleExpand: () =>
+                                  appState.toggleTagExpansion(tag),
+                            ),
+                          ),
+
+                          const SizedBox(height: 16),
+                          const Divider(),
+
+                          // Others category
+                          _OthersItem(
+                            count: _untaggedCount,
+                            isSelected: appState.isOthersSelected,
+                            onTap: () => appState.selectTag(
+                              Tag.others(paperCount: _untaggedCount),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-
-                    const SizedBox(height: 16),
-                    const Divider(),
-
-                    // Others category
-                    _OthersItem(
-                      count: _untaggedCount,
-                      isSelected: appState.isOthersSelected,
-                      onTap: () => appState.selectTag(
-                        Tag.others(paperCount: _untaggedCount),
-                      ),
-                    ),
-                  ],
-                ),
               ),
 
-              // Add tag button
+              // Add tag or Back to Tags button
               const Divider(height: 1),
               Padding(
                 padding: const EdgeInsets.all(8),
-                child: TextButton.icon(
-                  onPressed: () => _showAddTagDialog(context, appState),
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('New Tag'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Theme.of(context).colorScheme.primary,
-                  ),
+                child: Row(
+                  children: [
+                    if (appState.isConfigMode)
+                      Expanded(
+                        child: TextButton.icon(
+                          onPressed: () => appState.toggleConfigMode(),
+                          icon: const Icon(Icons.arrow_back, size: 18),
+                          label: const Text('Back to Tags'),
+                          style: TextButton.styleFrom(
+                            alignment: Alignment.centerRight,
+                            foregroundColor: Theme.of(
+                              context,
+                            ).colorScheme.primary,
+                          ),
+                        ),
+                      )
+                    else
+                      Expanded(
+                        child: TextButton.icon(
+                          onPressed: () => _showAddTagDialog(context, appState),
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('New Tag'),
+                          style: TextButton.styleFrom(
+                            alignment: Alignment.centerLeft,
+                            foregroundColor: Theme.of(
+                              context,
+                            ).colorScheme.primary,
+                          ),
+                        ),
+                      ),
+
+                    // Settings Toggle Icon
+                    if (!appState.isConfigMode)
+                      IconButton(
+                        onPressed: () => appState.toggleConfigMode(),
+                        icon: const Icon(Icons.settings_outlined, size: 20),
+                        tooltip: 'Settings',
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withOpacity(0.6),
+                      ),
+                  ],
                 ),
               ),
             ],
@@ -323,7 +365,9 @@ class _TagTreeItem extends StatelessWidget {
 
                   // Tag icon
                   Icon(
-                    Icons.label_outline,
+                    tag.isOthers
+                        ? Icons.folder_off_outlined
+                        : Icons.label_outline,
                     size: 18,
                     color: isSelected
                         ? Theme.of(context).colorScheme.primary
@@ -571,6 +615,76 @@ class _TagTreeItem extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ConfigNavigation extends StatelessWidget {
+  final String selectedCategory;
+  final Function(String) onSelect;
+
+  const _ConfigNavigation({
+    required this.selectedCategory,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      children: [
+        _ConfigItem(
+          icon: Icons.palette_outlined,
+          label: 'Appearance',
+          isSelected: selectedCategory == 'Appearance',
+          onTap: () => onSelect('Appearance'),
+        ),
+        _ConfigItem(
+          icon: Icons.picture_as_pdf_outlined,
+          label: 'PDF Viewer',
+          isSelected: selectedCategory == 'PDF Viewer',
+          onTap: () => onSelect('PDF Viewer'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ConfigItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _ConfigItem({
+    required this.icon,
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      dense: true,
+      selected: isSelected,
+      selectedTileColor: Theme.of(
+        context,
+      ).colorScheme.primaryContainer.withOpacity(0.3),
+      leading: Icon(
+        icon,
+        size: 20,
+        color: isSelected
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+      ),
+      title: Text(
+        label,
+        style: TextStyle(
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
+      onTap: onTap,
     );
   }
 }

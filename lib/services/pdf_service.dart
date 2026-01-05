@@ -129,6 +129,23 @@ class PdfService {
     return path.toLowerCase().endsWith('.pdf');
   }
 
+  /// Open PDF with custom application
+  static Future<bool> openWithCustomApp(String filePath, String appPath) async {
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        return false;
+      }
+
+      // Use open -a command on macOS for custom app
+      final result = await Process.run('open', ['-a', appPath, filePath]);
+      return result.exitCode == 0;
+    } catch (e) {
+      print('Error opening PDF with custom app: $e');
+      return false;
+    }
+  }
+
   /// Open PDF with system default viewer
   static Future<bool> openWithSystemViewer(String filePath) async {
     try {

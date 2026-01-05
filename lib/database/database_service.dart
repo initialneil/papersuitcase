@@ -138,14 +138,20 @@ class DatabaseService {
     return papers;
   }
 
-  /// Get papers by tag
+  /// Get papers by tag (including descendant tags)
   Future<List<Paper>> getPapersByTag(int tagId) async {
     final db = await database;
     final maps = await db.rawQuery(
       '''
-      SELECT p.* FROM papers p
+      WITH RECURSIVE descendant_tags AS (
+        SELECT id FROM tags WHERE id = ?
+        UNION ALL
+        SELECT t.id FROM tags t
+        INNER JOIN descendant_tags dt ON t.parent_id = dt.id
+      )
+      SELECT DISTINCT p.* FROM papers p
       INNER JOIN paper_tags pt ON p.id = pt.paper_id
-      WHERE pt.tag_id = ?
+      INNER JOIN descendant_tags dt ON pt.tag_id = dt.id
       ORDER BY p.added_at DESC
     ''',
       [tagId],
@@ -271,13 +277,21 @@ class DatabaseService {
     return Tag(id: id, name: name, parentId: parentId);
   }
 
-  /// Get all tags with paper counts
+  /// Get all tags with recursive paper counts (including descendants)
   Future<List<Tag>> getAllTags() async {
     final db = await database;
     final maps = await db.rawQuery('''
-      SELECT t.*, COUNT(pt.paper_id) as paper_count
+      WITH RECURSIVE tag_descendants(root_id, descendant_id) AS (
+        SELECT id, id FROM tags
+        UNION ALL
+        SELECT td.root_id, t.id
+        FROM tags t
+        JOIN tag_descendants td ON t.parent_id = td.descendant_id
+      )
+      SELECT t.*, COUNT(DISTINCT pt.paper_id) as paper_count
       FROM tags t
-      LEFT JOIN paper_tags pt ON t.id = pt.tag_id
+      LEFT JOIN tag_descendants td ON t.id = td.root_id
+      LEFT JOIN paper_tags pt ON td.descendant_id = pt.tag_id
       GROUP BY t.id
       ORDER BY t.name
     ''');
