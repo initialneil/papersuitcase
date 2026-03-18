@@ -4,6 +4,20 @@
 
 Redesign Paper Suitecase around a symlink-only model. The app never copies PDFs — it links to external folders ("entries") that can be synced by OneDrive, Dropbox, or any other mechanism. A `.papersuitecase` cache folder in each entry makes metadata portable across installs.
 
+## Migration Strategy
+
+Clean break — drop the existing database and start fresh. This is a personal-use app; no backward compatibility needed. Users re-add their entry folders. If those folders have `.papersuitecase/` caches from a prior install, metadata is recovered automatically.
+
+## Preserved Features (Not Part of Redesign)
+
+The following existing features are kept as-is:
+- Embedded PDF viewer with tab management
+- Theme settings (light/dark/system)
+- PDF reader type selection (embedded/system/custom)
+- Paper selection, drag-and-drop papers onto tags
+- Reveal paper in Finder
+- Settings view
+
 ## Core Concepts
 
 ### Entries
@@ -55,6 +69,7 @@ papers (
   arxiv_url TEXT,
   bibtex TEXT,
   bib_status TEXT NOT NULL DEFAULT 'none',  -- none | auto_fetched | verified
+  content_hash TEXT,  -- SHA256 of first 64KB, for rename detection
   added_at TEXT NOT NULL
 )
 
@@ -85,10 +100,15 @@ Created at the entry root directory:
 ├── thumbnails/
 │   ├── a1b2c3.png
 │   └── d4e5f6.png
+├── texts/
+│   ├── a1b2c3.txt
+│   └── d4e5f6.txt
 └── references.bib
 ```
 
 **File key**: SHA1 hash of the relative path from entry root (e.g., `sha1("ML/transformers.pdf")` → `a1b2c3`). Stable across machines if folder structure is the same.
+
+**texts/**: Extracted text per paper, stored as plain `.txt` files. Keeps manifest small while making text portable for fresh install recovery without re-extraction.
 
 **manifest.json**:
 
@@ -159,10 +179,10 @@ Manifest updated on metadata changes, debounced (not on every keystroke).
 - **Entry**: shows all papers in that folder + subfolders; subfolders are expandable/collapsible
 - **Tag**: shows papers with that tag across all entries
 - **Untagged**: papers with no tags assigned
-- Entry + tag selected simultaneously → intersection filter
+- **Entry + tag co-selection**: clicking a tag keeps the current entry selection (filters to intersection). Clicking an entry keeps the current tag. Clicking "All Papers" clears both.
 - Drop a folder onto the ENTRIES section to create a new entry
 - Counts shown next to each item, scoped to current filters
-- Navigation history tracks: selected entry/subfolder, selected tag, search query
+- Navigation history tracks: selected entry/subfolder path, selected tag, search query. Subfolders identified by relative path string (not DB ID since they're filesystem-derived).
 
 ## Live Folder Scanning
 
@@ -176,8 +196,8 @@ Manifest updated on metadata changes, debounced (not on every keystroke).
 
 1. Walk entry directory recursively, find all `.pdf` files
 2. Compare against DB by relative path
-3. **New path**: check if any recently removed paper has matching content hash → treat as rename (update path, preserve tags/bibtex). Otherwise treat as new paper.
-4. **Missing path**: remove from DB, delete thumbnail
+3. **New path**: check if any paper removed in this same scan cycle has matching `content_hash` (SHA256 of first 64KB) → treat as rename (update path, preserve tags/bibtex). Otherwise treat as new paper.
+4. **Missing path**: remove from DB, delete thumbnail. Content hash is checked against new paths (step 3) before deletion is finalized.
 5. Renamed + content changed = new file (no fuzzy matching)
 
 ### Background Processing for New Papers
@@ -203,8 +223,18 @@ Papers appear in grid immediately (title = filename). Then in background:
 1. Show metadata preview (title, authors, abstract)
 2. User picks target entry + subfolder (required)
 3. PDF downloaded to that folder on disk
-4. Live scan picks it up with pre-populated metadata (no re-extraction)
+4. Paper inserted directly into DB with pre-populated metadata (title, authors, abstract, arxiv_id, bibtex). Next scan sees the path already exists and skips it.
 5. If no entries exist: download action disabled with message "Add an entry folder first"
+
+### Paper Deletion
+
+"Delete" in the app only un-indexes the paper — removes from DB, tags, and manifest. **Never deletes files from disk.** Users delete actual PDFs via Finder if desired (use "Reveal in Finder").
+
+### Error Handling
+
+- **Entry folder missing**: if an entry's root path no longer exists at scan time, show a warning badge on the entry. Papers remain in DB but marked as inaccessible.
+- **Permission errors / symlink loops**: skip the problematic path, log a warning, continue scanning.
+- **Overlapping entries**: if the same PDF path falls under two entries, it belongs to whichever entry was added first (first match by path prefix).
 
 ## BibTeX Management
 
