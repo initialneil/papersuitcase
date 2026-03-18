@@ -291,6 +291,46 @@ class PdfService {
     }
   }
 
+  /// Generate thumbnail for a PDF to a specific output path.
+  /// Used by entry scanner to store thumbnails in .papersuitecase/thumbnails/.
+  static Future<String?> generateThumbnailToPath(
+      String pdfPath, String outputPath) async {
+    try {
+      final thumbFile = File(outputPath);
+      if (await thumbFile.exists()) return outputPath;
+      await Directory(p.dirname(outputPath)).create(recursive: true);
+
+      PdfDocument document;
+      try {
+        document = await PdfDocument.openFile(pdfPath);
+      } catch (e) {
+        final bytes = await File(pdfPath).readAsBytes();
+        document = await PdfDocument.openData(bytes);
+      }
+
+      final page = await document.getPage(1);
+      final width = 300;
+      final height = (width * page.height / page.width).toInt();
+      final pageImage = await page.render(width: width, height: height);
+
+      final image = img.Image.fromBytes(
+        width: pageImage.width,
+        height: pageImage.height,
+        bytes: pageImage.pixels.buffer,
+        order: img.ChannelOrder.rgba,
+        numChannels: 4,
+      );
+
+      final pngBytes = img.encodePng(image);
+      await thumbFile.writeAsBytes(pngBytes);
+      await document.dispose();
+      return outputPath;
+    } catch (e) {
+      print('Error generating thumbnail to path: $e');
+      return null;
+    }
+  }
+
   /// Delete thumbnail
   static Future<void> deleteThumbnail(int paperId) async {
     try {
