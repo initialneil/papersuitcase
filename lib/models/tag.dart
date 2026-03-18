@@ -17,14 +17,14 @@ class Tag {
     this.isExpanded = false,
   }) : children = children ?? [];
 
-  /// Special "Others" tag for untagged papers
-  static Tag others({int paperCount = 0}) => Tag(
+  /// Special "Untagged" tag for papers without tags
+  static Tag untagged({int paperCount = 0}) => Tag(
         id: -1,
-        name: 'Others',
+        name: 'Untagged',
         paperCount: paperCount,
       );
 
-  bool get isOthers => id == -1;
+  bool get isUntagged => id == -1;
 
   Map<String, dynamic> toMap() {
     return {

@@ -5,7 +5,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../models/paper.dart';
 import '../models/tag.dart';
-import '../models/paper_folder.dart';
+import '../models/entry.dart';
 
 /// Database service for managing papers and tags
 class DatabaseService {
@@ -33,53 +33,26 @@ class DatabaseService {
     // Ensure directory exists
     await Directory(appDir.path).create(recursive: true);
 
+    // Clean break: delete existing database if it exists
+    final dbFile = File(dbPath);
+    if (await dbFile.exists()) {
+      await dbFile.delete();
+    }
+
     return await openDatabase(
       dbPath,
-      version: 4,
+      version: 5,
       onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
     );
   }
 
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 2) {
-      await db.execute(
-        'ALTER TABLE papers ADD COLUMN is_symbolic_link INTEGER DEFAULT 0',
-      );
-      await db.execute('ALTER TABLE papers ADD COLUMN arxiv_url TEXT');
-      await db.execute('ALTER TABLE papers ADD COLUMN bibtex TEXT');
-    }
-    if (oldVersion < 3) {
-      // Version 3: Add folders support
-      await db.execute('''
-        CREATE TABLE folders (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          path TEXT NOT NULL UNIQUE,
-          name TEXT NOT NULL,
-          is_symbolic INTEGER DEFAULT 0,
-          added_at TEXT NOT NULL
-        )
-      ''');
-      await db.execute(
-        'ALTER TABLE papers ADD COLUMN folder_id INTEGER REFERENCES folders(id) ON DELETE SET NULL',
-      );
-    }
-    if (oldVersion < 4) {
-      await db.execute(
-        'ALTER TABLE folders ADD COLUMN parent_id INTEGER REFERENCES folders(id) ON DELETE CASCADE',
-      );
-    }
-  }
-
   Future<void> _onCreate(Database db, int version) async {
-    // Create folders table first (referenced by papers)
+    // Create entries table (referenced by papers)
     await db.execute('''
-      CREATE TABLE folders (
+      CREATE TABLE entries (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        parent_id INTEGER REFERENCES folders(id) ON DELETE CASCADE,
         path TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
-        is_symbolic INTEGER DEFAULT 0,
         added_at TEXT NOT NULL
       )
     ''');
@@ -88,17 +61,18 @@ class DatabaseService {
     await db.execute('''
       CREATE TABLE papers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
+        entry_id INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
         file_path TEXT NOT NULL UNIQUE,
-        arxiv_id TEXT,
+        title TEXT NOT NULL,
         authors TEXT,
         abstract TEXT,
         extracted_text TEXT,
-        added_at TEXT NOT NULL,
-        is_symbolic_link INTEGER DEFAULT 0,
+        arxiv_id TEXT,
         arxiv_url TEXT,
         bibtex TEXT,
-        folder_id INTEGER REFERENCES folders(id) ON DELETE SET NULL
+        bib_status TEXT NOT NULL DEFAULT 'none',
+        content_hash TEXT,
+        added_at TEXT NOT NULL
       )
     ''');
 
@@ -162,11 +136,42 @@ class DatabaseService {
 
     // Create indexes
     await db.execute('CREATE INDEX idx_papers_arxiv ON papers(arxiv_id)');
+    await db.execute('CREATE INDEX idx_papers_entry ON papers(entry_id)');
     await db.execute('CREATE INDEX idx_tags_parent ON tags(parent_id)');
     await db.execute(
       'CREATE INDEX idx_paper_tags_paper ON paper_tags(paper_id)',
     );
     await db.execute('CREATE INDEX idx_paper_tags_tag ON paper_tags(tag_id)');
+  }
+
+  // ==================== Entry Operations ====================
+
+  /// Insert a new entry
+  Future<int> insertEntry(Entry entry) async {
+    final db = await database;
+    return await db.insert('entries', entry.toMap());
+  }
+
+  /// Get all entries
+  Future<List<Entry>> getAllEntries() async {
+    final db = await database;
+    final maps = await db.query('entries', orderBy: 'name ASC');
+    return maps.map((map) => Entry.fromMap(map)).toList();
+  }
+
+  /// Delete an entry
+  Future<void> deleteEntry(int id) async {
+    final db = await database;
+    await db.delete('entries', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// Get entry by path
+  Future<Entry?> getEntryByPath(String path) async {
+    final db = await database;
+    final maps = await db.query('entries',
+        where: 'path = ?', whereArgs: [path], limit: 1);
+    if (maps.isEmpty) return null;
+    return Entry.fromMap(maps.first);
   }
 
   // ==================== Paper Operations ====================
@@ -207,9 +212,68 @@ class DatabaseService {
     return Paper.fromMap(maps.first, tags: tags);
   }
 
-  /// Get papers by tag (including descendant tags)
-  Future<List<Paper>> getPapersByTag(int tagId) async {
+  /// Get papers by entry
+  Future<List<Paper>> getPapersByEntry(int entryId) async {
     final db = await database;
+    final maps = await db.query('papers',
+        where: 'entry_id = ?',
+        whereArgs: [entryId],
+        orderBy: 'added_at DESC');
+    List<Paper> papers = [];
+    for (final map in maps) {
+      final tags = await getTagsForPaper(map['id'] as int);
+      papers.add(Paper.fromMap(map, tags: tags));
+    }
+    return papers;
+  }
+
+  /// Get papers by entry and subfolder prefix
+  Future<List<Paper>> getPapersByEntryAndSubfolder(
+      int entryId, String subfolderPrefix) async {
+    final db = await database;
+    final maps = await db.query('papers',
+        where: 'entry_id = ? AND file_path LIKE ?',
+        whereArgs: [entryId, '$subfolderPrefix%'],
+        orderBy: 'added_at DESC');
+    List<Paper> papers = [];
+    for (final map in maps) {
+      final tags = await getTagsForPaper(map['id'] as int);
+      papers.add(Paper.fromMap(map, tags: tags));
+    }
+    return papers;
+  }
+
+  /// Get a paper by its file path
+  Future<Paper?> getPaperByFilePath(String filePath) async {
+    final db = await database;
+    final maps = await db.query('papers',
+        where: 'file_path = ?', whereArgs: [filePath], limit: 1);
+    if (maps.isEmpty) return null;
+    final tags = await getTagsForPaper(maps.first['id'] as int);
+    return Paper.fromMap(maps.first, tags: tags);
+  }
+
+  /// Update paper file path
+  Future<void> updatePaperPath(int paperId, String newPath) async {
+    final db = await database;
+    await db.update('papers', {'file_path': newPath},
+        where: 'id = ?', whereArgs: [paperId]);
+  }
+
+  /// Get paper counts grouped by entry
+  Future<Map<int, int>> getEntryPaperCounts() async {
+    final db = await database;
+    final maps = await db.rawQuery(
+        'SELECT entry_id, COUNT(*) as count FROM papers GROUP BY entry_id');
+    return {
+      for (final m in maps) m['entry_id'] as int: m['count'] as int
+    };
+  }
+
+  /// Get papers by tag (including descendant tags)
+  Future<List<Paper>> getPapersByTag(int tagId, {int? entryId}) async {
+    final db = await database;
+    String entryFilter = entryId != null ? 'AND p.entry_id = $entryId' : '';
     final maps = await db.rawQuery(
       '''
       WITH RECURSIVE descendant_tags AS (
@@ -221,6 +285,7 @@ class DatabaseService {
       SELECT DISTINCT p.* FROM papers p
       INNER JOIN paper_tags pt ON p.id = pt.paper_id
       INNER JOIN descendant_tags dt ON pt.tag_id = dt.id
+      WHERE 1=1 $entryFilter
       ORDER BY p.added_at DESC
     ''',
       [tagId],
@@ -234,67 +299,18 @@ class DatabaseService {
     return papers;
   }
 
-  Future<int> insertFolder(PaperFolder folder) async {
+  /// Get untagged papers
+  Future<List<Paper>> getUntaggedPapers({int? entryId}) async {
     final db = await database;
-    return await db.insert('folders', folder.toMap());
-  }
-
-  Future<List<PaperFolder>> getAllFolders() async {
-    final db = await database;
-    final maps = await db.query('folders', orderBy: 'name ASC');
-    return maps.map((map) => PaperFolder.fromMap(map)).toList();
-  }
-
-  Future<void> updatePaperFolder(int paperId, int? folderId) async {
-    final db = await database;
-    await db.update(
-      'papers',
-      {'folder_id': folderId},
-      where: 'id = ?',
-      whereArgs: [paperId],
-    );
-  }
-
-  Future<void> deleteFolder(int id) async {
-    final db = await database;
-    // Unlink papers first (set folder_id to NULL)
-    await db.update(
-      'papers',
-      {'folder_id': null},
-      where: 'folder_id = ?',
-      whereArgs: [id],
-    );
-    await db.delete('folders', where: 'id = ?', whereArgs: [id]);
-  }
-
-  /// Get untagged papers (for "Others" category)
-  Future<List<Paper>> getUntaggedPapers() async {
-    final db = await database;
+    String entryFilter = entryId != null ? 'AND p.entry_id = $entryId' : '';
     final maps = await db.rawQuery('''
       SELECT p.* FROM papers p
       LEFT JOIN paper_tags pt ON p.id = pt.paper_id
-      WHERE pt.paper_id IS NULL
+      WHERE pt.paper_id IS NULL $entryFilter
       ORDER BY p.added_at DESC
     ''');
 
     return maps.map((map) => Paper.fromMap(map, tags: [])).toList();
-  }
-
-  Future<List<Paper>> getPapersByFolder(int folderId) async {
-    final db = await database;
-    final maps = await db.query(
-      'papers',
-      where: 'folder_id = ?',
-      whereArgs: [folderId],
-      orderBy: 'added_at DESC',
-    );
-    // Note: This fetches papers directly assigned to this folder. It does not recurse (yet).
-    List<Paper> papers = [];
-    for (final map in maps) {
-      final tags = await getTagsForPaper(map['id'] as int);
-      papers.add(Paper.fromMap(map, tags: tags));
-    }
-    return papers;
   }
 
   /// Search papers using FTS
@@ -352,7 +368,7 @@ class DatabaseService {
     // Update FTS index
     await db.rawUpdate(
       '''
-      UPDATE papers_fts SET 
+      UPDATE papers_fts SET
         title = ?,
         authors = ?,
         abstract = ?,
