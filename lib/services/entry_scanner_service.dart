@@ -168,7 +168,9 @@ class EntryScannerService {
   }
 
   /// Background processing for a newly detected paper.
-  Future<void> processNewPaper(Paper paper, Entry entry) async {
+  /// Set [skipBibtex] to true during bulk scans to avoid overwhelming DBLP.
+  Future<void> processNewPaper(Paper paper, Entry entry,
+      {bool skipBibtex = false}) async {
     try {
       final fullPath = p.join(entry.path, paper.filePath);
       final relativePath = paper.filePath;
@@ -222,24 +224,28 @@ class EntryScannerService {
       );
       await _db.updatePaper(updatedPaper);
 
-      // Auto-fetch BibTeX (best effort)
+      // Auto-fetch BibTeX (best effort, skipped during bulk scans)
       String? bibtex;
       String bibStatus = 'none';
-      try {
-        bibtex = await _tryFetchBibtex(title);
-        if (bibtex != null && bibtex.isNotEmpty) {
-          bibStatus = 'found';
+      if (!skipBibtex) {
+        try {
+          // Add delay to avoid rate limiting (429 errors)
+          await Future.delayed(const Duration(milliseconds: 500));
+          bibtex = await _tryFetchBibtex(title);
+          if (bibtex != null && bibtex.isNotEmpty) {
+            bibStatus = 'found';
+          }
+        } catch (e) {
+          print('Error fetching BibTeX for ${paper.filePath}: $e');
         }
-      } catch (e) {
-        print('Error fetching BibTeX for ${paper.filePath}: $e');
-      }
 
-      if (bibtex != null && bibtex.isNotEmpty) {
-        final withBib = updatedPaper.copyWith(
-          bibtex: bibtex,
-          bibStatus: bibStatus,
-        );
-        await _db.updatePaper(withBib);
+        if (bibtex != null && bibtex.isNotEmpty) {
+          final withBib = updatedPaper.copyWith(
+            bibtex: bibtex,
+            bibStatus: bibStatus,
+          );
+          await _db.updatePaper(withBib);
+        }
       }
 
       // Update manifest
@@ -370,6 +376,7 @@ class EntryScannerService {
   }
 
   /// Try to fetch BibTeX from DBLP by title.
+  /// Returns null on failure, including rate limiting (429) or connection errors.
   Future<String?> _tryFetchBibtex(String title) async {
     try {
       final results = await BibtexService.searchDblp(title);
@@ -379,6 +386,12 @@ class EntryScannerService {
       final best = results.first;
       final bibtex = await BibtexService.fetchBibtex(best.url);
       return bibtex;
+    } on HttpException catch (e) {
+      print('HTTP error fetching BibTeX: $e');
+      return null;
+    } on SocketException catch (e) {
+      print('Connection error fetching BibTeX: $e');
+      return null;
     } catch (e) {
       // Best effort — don't propagate
       return null;

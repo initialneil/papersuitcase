@@ -358,7 +358,8 @@ class AppState extends ChangeNotifier {
 
         if (result.newPapers.isNotEmpty) {
           for (final paper in result.newPapers) {
-            await _scannerService.processNewPaper(paper, entry);
+            await _scannerService.processNewPaper(paper, entry,
+                skipBibtex: true);
           }
         }
 
@@ -404,7 +405,8 @@ class AppState extends ChangeNotifier {
     for (final paper in papers) {
       // Only process papers that haven't been processed yet
       if (paper.extractedText == null || paper.extractedText!.isEmpty) {
-        await _scannerService.processNewPaper(paper, entry);
+        await _scannerService.processNewPaper(paper, entry,
+            skipBibtex: true);
       }
     }
   }

@@ -68,6 +68,20 @@ class ManifestService {
     return null;
   }
 
+  /// Recursively convert all nested maps to `Map<String, dynamic>`.
+  static Map<String, dynamic> _deepCast(Map map) {
+    return map.map((key, value) {
+      if (value is Map) {
+        return MapEntry(key.toString(), _deepCast(value));
+      } else if (value is List) {
+        return MapEntry(
+            key.toString(),
+            value.map((e) => e is Map ? _deepCast(e) : e).toList());
+      }
+      return MapEntry(key.toString(), value);
+    });
+  }
+
   /// Read manifest.json for an entry
   static Future<Map<String, dynamic>?> readManifest(String entryPath) async {
     final filePath = p.join(cachePath(entryPath), _manifestFile);
@@ -75,7 +89,11 @@ class ManifestService {
     if (!await file.exists()) return null;
     try {
       final content = await file.readAsString();
-      return json.decode(content) as Map<String, dynamic>;
+      final decoded = json.decode(content);
+      if (decoded is Map) {
+        return _deepCast(decoded);
+      }
+      return null;
     } catch (e) {
       return null;
     }
