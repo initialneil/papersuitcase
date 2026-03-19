@@ -11,11 +11,10 @@ import '../providers/app_state.dart';
 import '../database/database_service.dart';
 import '../services/arxiv_service.dart';
 
-/// Dialog for downloading papers from arXiv with smart context-aware suggestions.
+/// Dialog for downloading papers from arXiv with smart context-aware suggestions
+/// and duplicate detection.
 class DownloadDialog extends StatefulWidget {
   final String? arxivUrl;
-
-  /// Current context for smart suggestions
   final Entry? contextEntry;
   final String? contextSubfolder;
   final Tag? contextTag;
@@ -60,7 +59,10 @@ class _DownloadDialogState extends State<DownloadDialog> {
   Set<int> _selectedTagIds = {};
   List<String> _subfolderSuggestions = [];
   bool _isCustomSubfolder = false;
-  List<String> _newTagNames = []; // Tags to create on download
+  List<String> _newTagNames = [];
+
+  // Duplicate detection
+  List<Paper> _similarPapers = [];
 
   @override
   void initState() {
@@ -73,7 +75,6 @@ class _DownloadDialogState extends State<DownloadDialog> {
     final appState = context.read<AppState>();
     final entries = appState.entries;
 
-    // Pre-select entry from context
     if (widget.contextEntry != null) {
       _selectedEntry = entries
           .where((e) => e.id == widget.contextEntry!.id)
@@ -81,19 +82,16 @@ class _DownloadDialogState extends State<DownloadDialog> {
     }
     _selectedEntry ??= entries.isNotEmpty ? entries.first : null;
 
-    // Pre-fill subfolder from context
     if (widget.contextSubfolder != null) {
       _subfolderController.text = widget.contextSubfolder!;
     }
 
-    // Pre-select current tag
     if (widget.contextTag != null &&
         !widget.contextTag!.isUntagged &&
         widget.contextTag!.id != null) {
       _selectedTagIds.add(widget.contextTag!.id!);
     }
 
-    // Build tag suggestions and subfolder suggestions
     _buildSuggestions(appState);
   }
 
@@ -107,20 +105,14 @@ class _DownloadDialogState extends State<DownloadDialog> {
     }
     collectTags(appState.tagTree);
 
-    // Score tags: higher score = shown first
-    // Current tag gets highest priority, then tags on papers in current context
     final tagScores = <int, int>{};
     for (final t in allTags) {
       if (t.id == null) continue;
       tagScores[t.id!] = 0;
     }
-
-    // Current tag gets top score
     if (widget.contextTag != null && widget.contextTag!.id != null) {
       tagScores[widget.contextTag!.id!] = 1000;
     }
-
-    // Tags from papers in current view get bonus
     for (final paper in appState.papers) {
       for (final tag in paper.tags) {
         if (tag.id != null) {
@@ -128,21 +120,15 @@ class _DownloadDialogState extends State<DownloadDialog> {
         }
       }
     }
-
-    // Sort by score descending, then by name
     allTags.sort((a, b) {
       final scoreA = tagScores[a.id] ?? 0;
       final scoreB = tagScores[b.id] ?? 0;
       if (scoreA != scoreB) return scoreB.compareTo(scoreA);
       return a.name.compareTo(b.name);
     });
-
     _suggestedTags = allTags.where((t) => !t.isUntagged).toList();
 
-    // Build subfolder suggestions from papers in current context
     final subfolders = <String, int>{};
-
-    // If we have a tag selected, get subfolders from papers with that tag
     if (widget.contextTag != null) {
       for (final paper in appState.papers) {
         final dir = p.dirname(paper.filePath);
@@ -151,28 +137,22 @@ class _DownloadDialogState extends State<DownloadDialog> {
         }
       }
     }
-    // Also add subfolders from current entry
     if (_selectedEntry != null) {
       for (final key in _selectedEntry!.subfolderCounts.keys) {
         subfolders[key] = (subfolders[key] ?? 0) +
             _selectedEntry!.subfolderCounts[key]!;
       }
     }
-
-    // Sort by frequency
     final sorted = subfolders.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     _subfolderSuggestions = sorted.map((e) => e.key).toList();
 
-    // Pre-fill subfolder
     if (widget.contextSubfolder != null) {
-      // If context subfolder is in suggestions, select it; otherwise custom mode
       if (!_subfolderSuggestions.contains(widget.contextSubfolder)) {
         _subfolderSuggestions.insert(0, widget.contextSubfolder!);
       }
       _subfolderController.text = widget.contextSubfolder!;
-    } else if (widget.contextTag != null &&
-        _subfolderSuggestions.isNotEmpty) {
+    } else if (widget.contextTag != null && _subfolderSuggestions.isNotEmpty) {
       _subfolderController.text = _subfolderSuggestions.first;
     }
   }
@@ -203,8 +183,12 @@ class _DownloadDialogState extends State<DownloadDialog> {
           _error = 'Could not fetch metadata for arXiv:$arxivId';
         });
       } else {
+        // Search for similar existing papers
+        final similar = await _findSimilarPapers(metadata.title, arxivId);
+
         setState(() {
           _metadata = metadata;
+          _similarPapers = similar;
           _isFetchingMetadata = false;
         });
       }
@@ -216,6 +200,69 @@ class _DownloadDialogState extends State<DownloadDialog> {
       });
     }
   }
+
+  /// Fuzzy search for existing papers by title keywords and arxiv ID
+  Future<List<Paper>> _findSimilarPapers(
+      String title, String arxivId) async {
+    final db = DatabaseService();
+    final results = <Paper>[];
+    final seenIds = <int>{};
+
+    // 1. Exact arXiv ID match
+    try {
+      final allPapers = await db.getAllPapers();
+      for (final paper in allPapers) {
+        if (paper.arxivId == arxivId) {
+          results.add(paper);
+          if (paper.id != null) seenIds.add(paper.id!);
+        }
+      }
+    } catch (_) {}
+
+    // 2. FTS search with significant words from title
+    final words = title
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^\w\s]'), ' ')
+        .split(RegExp(r'\s+'))
+        .where((w) => w.length > 3) // skip short words
+        .where((w) => !_stopWords.contains(w))
+        .take(5) // top 5 significant words
+        .toList();
+
+    if (words.isNotEmpty) {
+      try {
+        final query = words.join(' ');
+        final ftsResults = await db.searchPapers(query);
+        for (final paper in ftsResults) {
+          if (paper.id != null && !seenIds.contains(paper.id!)) {
+            // Score by word overlap
+            final paperTitle = paper.title.toLowerCase();
+            int matches = 0;
+            for (final w in words) {
+              if (paperTitle.contains(w)) matches++;
+            }
+            // Only include if at least 40% word overlap
+            if (matches >= (words.length * 0.4).ceil()) {
+              results.add(paper);
+              seenIds.add(paper.id!);
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    return results.take(5).toList(); // max 5 similar papers
+  }
+
+  static const _stopWords = {
+    'the', 'and', 'for', 'with', 'from', 'that', 'this', 'are',
+    'was', 'were', 'been', 'being', 'have', 'has', 'had', 'does',
+    'did', 'will', 'would', 'could', 'should', 'may', 'might',
+    'shall', 'can', 'need', 'dare', 'ought', 'used', 'using',
+    'based', 'via', 'through', 'into', 'over', 'under', 'between',
+    'each', 'every', 'both', 'more', 'most', 'other', 'some',
+    'such', 'than', 'very', 'just', 'about', 'also', 'only',
+  };
 
   void _showAddTagDialog() {
     final controller = TextEditingController();
@@ -268,11 +315,9 @@ class _DownloadDialogState extends State<DownloadDialog> {
 
   Future<void> _download() async {
     if (_metadata == null || _selectedEntry == null) return;
-
     setState(() => _isDownloading = true);
 
     try {
-      // Build destination path
       var destDir = _selectedEntry!.path;
       final subfolder = _subfolderController.text.trim();
       if (subfolder.isNotEmpty) {
@@ -280,22 +325,18 @@ class _DownloadDialogState extends State<DownloadDialog> {
         await Directory(destDir).create(recursive: true);
       }
 
-      // Download PDF
       final response = await http.get(Uri.parse(_metadata!.pdfUrl));
       if (response.statusCode != 200) {
         throw Exception('Download failed with status ${response.statusCode}');
       }
 
-      // Save file
       final sanitizedTitle = _sanitizeFilename(_metadata!.title);
       final fileName = '$sanitizedTitle.pdf';
       final filePath = p.join(destDir, fileName);
       await File(filePath).writeAsBytes(response.bodyBytes);
 
-      // Compute relative path for DB
       final relativePath = p.relative(filePath, from: _selectedEntry!.path);
 
-      // Insert paper into DB
       if (!mounted) return;
       final db = DatabaseService();
       final paper = Paper(
@@ -311,18 +352,14 @@ class _DownloadDialogState extends State<DownloadDialog> {
       );
       final paperId = await db.insertPaper(paper);
 
-      // Assign selected existing tags
       for (final tagId in _selectedTagIds) {
         await db.addTagToPaper(paperId, tagId);
       }
-
-      // Create and assign new tags
       for (final tagName in _newTagNames) {
         final tag = await db.getOrCreateTag(tagName);
         await db.addTagToPaper(paperId, tag.id!);
       }
 
-      // Refresh
       if (!mounted) return;
       final appState = context.read<AppState>();
       await appState.scanAllEntries();
@@ -349,11 +386,12 @@ class _DownloadDialogState extends State<DownloadDialog> {
   Widget build(BuildContext context) {
     final entries = context.read<AppState>().entries;
     final hasEntries = entries.isNotEmpty;
+    final hasSimilar = _similarPapers.isNotEmpty && _metadata != null;
 
     return AlertDialog(
       title: const Text('Download from arXiv'),
       content: SizedBox(
-        width: 550,
+        width: hasSimilar ? 850 : 550,
         child: _isFetchingMetadata
             ? const Padding(
                 padding: EdgeInsets.all(32),
@@ -361,9 +399,32 @@ class _DownloadDialogState extends State<DownloadDialog> {
               )
             : _error != null && _metadata == null
                 ? Text(_error!,
-                    style: TextStyle(
-                        color: Theme.of(context).colorScheme.error))
-                : _buildContent(entries, hasEntries),
+                    style:
+                        TextStyle(color: Theme.of(context).colorScheme.error))
+                : hasSimilar
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Left: download form
+                          Expanded(
+                            flex: 3,
+                            child: _buildContent(entries, hasEntries),
+                          ),
+                          const SizedBox(width: 16),
+                          // Divider
+                          SizedBox(
+                            height: 400,
+                            child: VerticalDivider(width: 1),
+                          ),
+                          const SizedBox(width: 16),
+                          // Right: similar papers
+                          Expanded(
+                            flex: 2,
+                            child: _buildSimilarPanel(),
+                          ),
+                        ],
+                      )
+                    : _buildContent(entries, hasEntries),
       ),
       actions: [
         TextButton(
@@ -372,18 +433,149 @@ class _DownloadDialogState extends State<DownloadDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed:
-              _isDownloading || _metadata == null || !hasEntries
-                  ? null
-                  : _download,
+          onPressed: _isDownloading || _metadata == null || !hasEntries
+              ? null
+              : _download,
           child: _isDownloading
               ? const SizedBox(
                   width: 16,
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('Download'),
+              : Text(_similarPapers.isNotEmpty
+                  ? 'Download Anyway'
+                  : 'Download'),
         ),
+      ],
+    );
+  }
+
+  /// Right panel showing similar/duplicate papers
+  Widget _buildSimilarPanel() {
+    final colorScheme = Theme.of(context).colorScheme;
+    final appState = context.read<AppState>();
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.warning_amber_rounded,
+                size: 18, color: colorScheme.error),
+            const SizedBox(width: 6),
+            Text(
+              'Similar papers found',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: colorScheme.error,
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ..._similarPapers.map((paper) {
+          // Find which entry this paper belongs to
+          final entry = appState.entries
+              .where((e) => e.id == paper.entryId)
+              .firstOrNull;
+          final location = entry != null
+              ? '${entry.name}/${paper.filePath}'
+              : paper.filePath;
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: colorScheme.errorContainer.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: colorScheme.error.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Match indicator
+                if (paper.arxivId == _metadata?.arxivId &&
+                    paper.arxivId != null)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: colorScheme.error,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      'EXACT MATCH (same arXiv ID)',
+                      style: TextStyle(
+                        color: colorScheme.onError,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  )
+                else
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: colorScheme.tertiary,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      'SIMILAR TITLE',
+                      style: TextStyle(
+                        color: colorScheme.onTertiary,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                Text(
+                  paper.title,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  location,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurface.withValues(alpha: 0.5),
+                      fontSize: 10),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (paper.tags.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 4,
+                    children: paper.tags.take(3).map((t) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                        child: Text(t.name,
+                            style: TextStyle(
+                                fontSize: 9,
+                                color: colorScheme.onSurfaceVariant)),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ],
+            ),
+          );
+        }),
       ],
     );
   }
@@ -400,7 +592,6 @@ class _DownloadDialogState extends State<DownloadDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Title
           Text(
             meta.title,
             style: Theme.of(context)
@@ -411,7 +602,6 @@ class _DownloadDialogState extends State<DownloadDialog> {
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 4),
-          // Authors
           Text(
             meta.authors,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -420,23 +610,18 @@ class _DownloadDialogState extends State<DownloadDialog> {
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 8),
-          // Abstract
           if (abstractPreview.isNotEmpty)
             Text(
               abstractPreview,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: colorScheme.onSurface.withValues(alpha: 0.5)),
             ),
-
           if (_error != null) ...[
             const SizedBox(height: 8),
             Text(_error!,
-                style: TextStyle(
-                    color: colorScheme.error, fontSize: 12)),
+                style: TextStyle(color: colorScheme.error, fontSize: 12)),
           ],
-
           const Divider(height: 24),
-
           if (!hasEntries) ...[
             Text('Add an entry folder first',
                 style: TextStyle(color: colorScheme.error)),
@@ -444,7 +629,8 @@ class _DownloadDialogState extends State<DownloadDialog> {
             // Entry picker
             Row(
               children: [
-                Text('Entry:', style: Theme.of(context).textTheme.labelLarge),
+                Text('Entry:',
+                    style: Theme.of(context).textTheme.labelLarge),
                 const SizedBox(width: 12),
                 Expanded(
                   child: DropdownButton<Entry>(
@@ -469,7 +655,7 @@ class _DownloadDialogState extends State<DownloadDialog> {
             ),
             const SizedBox(height: 12),
 
-            // Subfolder dropdown with custom option
+            // Subfolder dropdown
             Row(
               children: [
                 Text('Subfolder:',
@@ -508,8 +694,8 @@ class _DownloadDialogState extends State<DownloadDialog> {
                             const DropdownMenuItem(
                               value: '',
                               child: Text('(root)',
-                                  style: TextStyle(
-                                      fontStyle: FontStyle.italic)),
+                                  style:
+                                      TextStyle(fontStyle: FontStyle.italic)),
                             ),
                             ..._subfolderSuggestions.map((sf) {
                               return DropdownMenuItem(
@@ -547,18 +733,19 @@ class _DownloadDialogState extends State<DownloadDialog> {
 
             const SizedBox(height: 16),
 
-            // Tag assignment
+            // Tags
             Row(
               children: [
-                Text('Tags:', style: Theme.of(context).textTheme.labelLarge),
+                Text('Tags:',
+                    style: Theme.of(context).textTheme.labelLarge),
                 const Spacer(),
-                // Add new tag button
                 SizedBox(
                   height: 28,
                   child: TextButton.icon(
                     onPressed: _isDownloading ? null : _showAddTagDialog,
                     icon: const Icon(Icons.add, size: 14),
-                    label: const Text('New tag', style: TextStyle(fontSize: 12)),
+                    label:
+                        const Text('New tag', style: TextStyle(fontSize: 12)),
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       visualDensity: VisualDensity.compact,
@@ -569,7 +756,7 @@ class _DownloadDialogState extends State<DownloadDialog> {
             ),
             const SizedBox(height: 6),
 
-            // Selected tags (shown first as removable chips)
+            // Selected tags
             if (_newTagNames.isNotEmpty || _selectedTagIds.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -577,32 +764,35 @@ class _DownloadDialogState extends State<DownloadDialog> {
                   spacing: 6,
                   runSpacing: 4,
                   children: [
-                    // Existing selected tags
                     ..._suggestedTags
-                        .where((t) => t.id != null && _selectedTagIds.contains(t.id))
+                        .where((t) =>
+                            t.id != null && _selectedTagIds.contains(t.id))
                         .map((tag) => Chip(
-                              label: Text(tag.name, style: const TextStyle(fontSize: 11)),
+                              label: Text(tag.name,
+                                  style: const TextStyle(fontSize: 11)),
                               deleteIcon: const Icon(Icons.close, size: 14),
                               visualDensity: VisualDensity.compact,
                               onDeleted: _isDownloading
                                   ? null
-                                  : () => setState(() => _selectedTagIds.remove(tag.id!)),
+                                  : () => setState(
+                                      () => _selectedTagIds.remove(tag.id!)),
                             )),
-                    // New tags (not yet in DB)
                     ..._newTagNames.map((name) => Chip(
-                          label: Text(name, style: const TextStyle(fontSize: 11)),
+                          label: Text(name,
+                              style: const TextStyle(fontSize: 11)),
                           deleteIcon: const Icon(Icons.close, size: 14),
                           visualDensity: VisualDensity.compact,
                           backgroundColor: colorScheme.tertiaryContainer,
                           onDeleted: _isDownloading
                               ? null
-                              : () => setState(() => _newTagNames.remove(name)),
+                              : () => setState(
+                                  () => _newTagNames.remove(name)),
                         )),
                   ],
                 ),
               ),
 
-            // Available tags to add
+            // Available tags
             if (_suggestedTags.isNotEmpty)
               ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 100),
@@ -611,7 +801,8 @@ class _DownloadDialogState extends State<DownloadDialog> {
                     spacing: 6,
                     runSpacing: 4,
                     children: _suggestedTags
-                        .where((t) => t.id != null && !_selectedTagIds.contains(t.id))
+                        .where((t) =>
+                            t.id != null && !_selectedTagIds.contains(t.id))
                         .take(20)
                         .map((tag) {
                       return ActionChip(
@@ -621,7 +812,8 @@ class _DownloadDialogState extends State<DownloadDialog> {
                         visualDensity: VisualDensity.compact,
                         onPressed: _isDownloading
                             ? null
-                            : () => setState(() => _selectedTagIds.add(tag.id!)),
+                            : () =>
+                                setState(() => _selectedTagIds.add(tag.id!)),
                       );
                     }).toList(),
                   ),
