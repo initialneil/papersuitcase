@@ -769,8 +769,13 @@ class _DownloadDialogState extends State<DownloadDialog> {
                             t.id != null && _selectedTagIds.contains(t.id))
                         .map((tag) => Chip(
                               label: Text(tag.name,
-                                  style: const TextStyle(fontSize: 11)),
-                              deleteIcon: const Icon(Icons.close, size: 14),
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: colorScheme.onPrimary,
+                                      fontWeight: FontWeight.w500)),
+                              deleteIcon: Icon(Icons.close,
+                                  size: 14, color: colorScheme.onPrimary),
+                              backgroundColor: colorScheme.primary,
                               visualDensity: VisualDensity.compact,
                               onDeleted: _isDownloading
                                   ? null
@@ -779,10 +784,14 @@ class _DownloadDialogState extends State<DownloadDialog> {
                             )),
                     ..._newTagNames.map((name) => Chip(
                           label: Text(name,
-                              style: const TextStyle(fontSize: 11)),
-                          deleteIcon: const Icon(Icons.close, size: 14),
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: colorScheme.onTertiary,
+                                  fontWeight: FontWeight.w500)),
+                          deleteIcon: Icon(Icons.close,
+                              size: 14, color: colorScheme.onTertiary),
+                          backgroundColor: colorScheme.tertiary,
                           visualDensity: VisualDensity.compact,
-                          backgroundColor: colorScheme.tertiaryContainer,
                           onDeleted: _isDownloading
                               ? null
                               : () => setState(
