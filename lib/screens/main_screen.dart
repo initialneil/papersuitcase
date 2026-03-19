@@ -9,6 +9,7 @@ import '../widgets/paper_grid.dart';
 import '../widgets/drop_zone.dart';
 import '../widgets/settings_view.dart';
 import '../widgets/embedded_pdf_viewer.dart';
+import '../widgets/auth_screen.dart';
 import 'package:flutter/services.dart';
 
 /// Main application screen
@@ -26,6 +27,13 @@ class CloseIntent extends Intent {
 class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
+    final appState = context.watch<AppState>();
+    if (appState.showAuthScreen) {
+      return Scaffold(
+        body: AuthScreen(onContinueOffline: () => appState.skipAuth()),
+      );
+    }
+
     return Shortcuts(
       shortcuts: <ShortcutActivator, Intent>{
         const SingleActivator(LogicalKeyboardKey.escape): const CloseIntent(),

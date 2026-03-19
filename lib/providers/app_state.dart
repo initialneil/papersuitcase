@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart' as p;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/settings_enums.dart';
 import '../database/database_service.dart';
@@ -13,6 +14,7 @@ import '../services/pdf_service.dart';
 import '../services/arxiv_service.dart';
 import '../services/entry_scanner_service.dart';
 import '../services/manifest_service.dart';
+import '../services/supabase_service.dart';
 
 class _NavigationState {
   final Tag? tag;
@@ -74,6 +76,12 @@ class AppState extends ChangeNotifier {
   String? _customPdfAppPath;
   List<String> _customPdfApps = [];
 
+  // Auth state
+  User? _currentUser;
+  Map<String, dynamic>? _userProfile;
+  bool _isAuthLoading = false;
+  bool _hasSkippedAuth = false;
+
   // Getters
   List<Paper> get papers => _papers;
   List<Tag> get tagTree => _tagTree;
@@ -98,6 +106,16 @@ class AppState extends ChangeNotifier {
   String? get customPdfAppPath => _customPdfAppPath;
   List<String> get customPdfApps => _customPdfApps;
 
+  // Auth Getters
+  User? get currentUser => _currentUser;
+  Map<String, dynamic>? get userProfile => _userProfile;
+  bool get isLoggedIn => _currentUser != null;
+  bool get isAuthLoading => _isAuthLoading;
+  bool get showAuthScreen => !isLoggedIn && !_hasSkippedAuth;
+  String get userTier => (_userProfile?['tier'] as String?) ?? 'free';
+  int get llmCallsThisMonth => (_userProfile?['llm_calls_this_month'] as int?) ?? 0;
+  int get llmCallsLimit => userTier == 'pro' ? 300 : 30;
+
   // Navigation History Getters
   bool get canGoBack => _historyIndex > 0;
   bool get canGoForward => _historyIndex < _history.length - 1;
@@ -117,6 +135,28 @@ class AppState extends ChangeNotifier {
       // Push initial state
       _pushHistory();
       await refresh();
+
+      // Initialize auth state
+      _currentUser = SupabaseService.currentUser;
+      if (_currentUser != null) {
+        try {
+          _userProfile = await SupabaseService.getProfile();
+        } catch (e) {
+          debugPrint('Failed to load profile: $e');
+        }
+      }
+      SupabaseService.authStateChanges.listen((authState) {
+        _currentUser = authState.session?.user;
+        if (_currentUser != null) {
+          SupabaseService.getProfile().then((profile) {
+            _userProfile = profile;
+            notifyListeners();
+          });
+        } else {
+          _userProfile = null;
+        }
+        notifyListeners();
+      });
     } catch (e) {
       _error = 'Failed to initialize: $e';
       print(_error);
@@ -497,6 +537,7 @@ class AppState extends ChangeNotifier {
 
     _customPdfAppPath = prefs.getString('customPdfAppPath');
     _customPdfApps = prefs.getStringList('customPdfApps') ?? [];
+    _hasSkippedAuth = prefs.getBool('has_skipped_auth') ?? false;
   }
 
   void toggleConfigMode() {
@@ -956,6 +997,66 @@ class AppState extends ChangeNotifier {
       print(_error);
       notifyListeners();
     }
+  }
+
+  // ==================== Auth Methods ====================
+
+  Future<String?> signInWithEmail(String email, String password) async {
+    _isAuthLoading = true;
+    notifyListeners();
+    try {
+      await SupabaseService.signInWithEmail(email, password);
+      return null;
+    } on AuthException catch (e) {
+      return e.message;
+    } finally {
+      _isAuthLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<String?> signUpWithEmail(String email, String password) async {
+    _isAuthLoading = true;
+    notifyListeners();
+    try {
+      await SupabaseService.signUpWithEmail(email, password);
+      return null;
+    } on AuthException catch (e) {
+      return e.message;
+    } finally {
+      _isAuthLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> signInWithGoogle() async {
+    await SupabaseService.signInWithGoogle();
+  }
+
+  Future<void> signInWithGitHub() async {
+    await SupabaseService.signInWithGitHub();
+  }
+
+  Future<void> signOut() async {
+    await SupabaseService.signOut();
+    _currentUser = null;
+    _userProfile = null;
+    notifyListeners();
+  }
+
+  void skipAuth() {
+    _hasSkippedAuth = true;
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setBool('has_skipped_auth', true);
+    });
+    notifyListeners();
+  }
+
+  Future<void> resetSkipAuth() async {
+    _hasSkippedAuth = false;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('has_skipped_auth', false);
+    notifyListeners();
   }
 
   /// Clear error

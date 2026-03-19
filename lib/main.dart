@@ -4,6 +4,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'providers/app_state.dart';
 import 'screens/main_screen.dart';
+import 'services/supabase_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,6 +25,12 @@ void main() async {
     await windowManager.show();
     await windowManager.focus();
   });
+
+  try {
+    await SupabaseService.initialize();
+  } catch (e) {
+    debugPrint('Supabase init failed (offline mode): $e');
+  }
 
   runApp(const PaperSuitecaseApp());
 }
