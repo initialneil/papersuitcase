@@ -10,6 +10,7 @@ import '../widgets/drop_zone.dart';
 import '../widgets/settings_view.dart';
 import '../widgets/embedded_pdf_viewer.dart';
 import '../widgets/auth_screen.dart';
+import '../widgets/discover_tab.dart';
 import 'package:flutter/services.dart';
 
 /// Main application screen
@@ -65,7 +66,9 @@ class _MainScreenState extends State<MainScreen> {
                   Expanded(
                     child: Consumer<AppState>(
                       builder: (context, appState, child) {
-                        if (appState.viewingPaper != null) {
+                        if (appState.showDiscover) {
+                          return const DiscoverTab();
+                        } else if (appState.viewingPaper != null) {
                           return EmbeddedPdfViewer(
                             paper: appState.viewingPaper!,
                             onBack: () => appState.closePaperViewer(),

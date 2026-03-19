@@ -16,6 +16,7 @@ import '../services/entry_scanner_service.dart';
 import '../services/manifest_service.dart';
 import '../services/supabase_service.dart';
 import '../services/sync_service.dart';
+import '../services/recommendation_service.dart';
 
 class _NavigationState {
   final Tag? tag;
@@ -89,6 +90,12 @@ class AppState extends ChangeNotifier {
   DateTime? _lastSyncedAt;
   String? _syncError;
 
+  // Recommendation state
+  final RecommendationService _recommendationService = RecommendationService();
+  Recommendations _recommendations = Recommendations();
+  bool _isLoadingRecommendations = false;
+  bool _showDiscover = false;
+
   // Getters
   List<Paper> get papers => _papers;
   List<Tag> get tagTree => _tagTree;
@@ -117,6 +124,11 @@ class AppState extends ChangeNotifier {
   bool get isSyncing => _isSyncing;
   DateTime? get lastSyncedAt => _lastSyncedAt;
   String? get syncError => _syncError;
+
+  // Recommendation Getters
+  Recommendations get recommendations => _recommendations;
+  bool get isLoadingRecommendations => _isLoadingRecommendations;
+  bool get showDiscover => _showDiscover;
 
   // Auth Getters
   User? get currentUser => _currentUser;
@@ -595,6 +607,7 @@ class AppState extends ChangeNotifier {
 
   /// Select a tag to filter papers (clears entry selection)
   Future<void> selectTag(Tag? tag) async {
+    _showDiscover = false;
     _selectedTag = tag;
     _selectedEntry = null;
     _selectedSubfolder = null;
@@ -613,6 +626,7 @@ class AppState extends ChangeNotifier {
 
   /// Select an entry to filter papers (clears tag selection)
   Future<void> selectEntry(Entry? entry, {String? subfolder}) async {
+    _showDiscover = false;
     _selectedEntry = entry;
     _selectedSubfolder = subfolder;
     _selectedTag = null;
@@ -626,6 +640,7 @@ class AppState extends ChangeNotifier {
 
   /// Select all papers (clear entry, tag, and search)
   Future<void> selectAllPapersView() async {
+    _showDiscover = false;
     _selectedTag = null;
     _selectedEntry = null;
     _selectedSubfolder = null;
@@ -647,6 +662,7 @@ class AppState extends ChangeNotifier {
 
   /// Update search query
   Future<void> setSearchQuery(String query) async {
+    _showDiscover = false;
     _searchQuery = query.trim();
 
     if (_searchQuery.isEmpty) {
@@ -1090,6 +1106,7 @@ class AppState extends ChangeNotifier {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('last_synced_at', _lastSyncedAt!.toIso8601String());
         _syncError = null;
+        fetchRecommendations(); // fire-and-forget
       } else {
         _syncError = result.error;
       }
@@ -1099,6 +1116,34 @@ class AppState extends ChangeNotifier {
       _isSyncing = false;
       notifyListeners();
     }
+  }
+
+  // ==================== Recommendations ====================
+
+  Future<void> fetchRecommendations() async {
+    if (!isLoggedIn) return;
+    _isLoadingRecommendations = true;
+    notifyListeners();
+    try {
+      _recommendations = await _recommendationService.fetchAll();
+    } catch (e) {
+      debugPrint('Failed to fetch recommendations: $e');
+    } finally {
+      _isLoadingRecommendations = false;
+      notifyListeners();
+    }
+  }
+
+  void showDiscoverTab() {
+    _showDiscover = true;
+    _viewingPaper = null;
+    _isConfigMode = false;
+    notifyListeners();
+  }
+
+  void hideDiscoverTab() {
+    _showDiscover = false;
+    notifyListeners();
   }
 
   /// Clear error

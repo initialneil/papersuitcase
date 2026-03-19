@@ -31,6 +31,13 @@ class TagSidebar extends StatelessWidget {
                 onTap: () => appState.selectAllPapersView(),
               ),
 
+              // Discover button (only when logged in)
+              if (appState.isLoggedIn)
+                _DiscoverItem(
+                  isSelected: appState.showDiscover,
+                  onTap: () => appState.showDiscoverTab(),
+                ),
+
               const Divider(height: 1),
 
               // Entries and Tags as separate scrollable sections
@@ -318,6 +325,60 @@ class _SyncIndicator extends StatelessWidget {
     }
 
     return const SizedBox.shrink();
+  }
+}
+
+/// Discover button shown when logged in.
+class _DiscoverItem extends StatelessWidget {
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _DiscoverItem({
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: isSelected
+          ? Theme.of(context)
+              .colorScheme
+              .primaryContainer
+              .withValues(alpha: 0.3)
+          : Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(
+                Icons.explore,
+                size: 20,
+                color: isSelected
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.7),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Discover',
+                  style: TextStyle(
+                    fontWeight:
+                        isSelected ? FontWeight.bold : FontWeight.normal,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
