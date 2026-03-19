@@ -163,6 +163,28 @@ class _MainContent extends StatelessWidget {
                 ),
               ),
 
+            // Background processing indicator
+            if (appState.processingCount > 0)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Row(
+                  children: [
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Processing ${appState.processingCount} papers...',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
             // Paper grid
             Expanded(
               child: appState.isLoading

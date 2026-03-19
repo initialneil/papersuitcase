@@ -112,18 +112,20 @@ class AppState extends ChangeNotifier {
       _scannerService = EntryScannerService(_db, _pdfService);
       await _loadSettings();
 
-      // Auto-add test entry on first launch if entries are empty
       _entries = await _db.getAllEntries();
-      if (_entries.isEmpty) {
-        final testPath = '/Users/neil/Library/CloudStorage/Nutstore-initialneil@gmail.com/Nutstore/Reading/Papers';
-        if (await Directory(testPath).exists()) {
-          await addEntry(testPath);
-        }
-      }
 
       // Push initial state
       _pushHistory();
       await refresh();
+
+      // Auto-add test entry on first launch (after UI is shown)
+      if (_entries.isEmpty) {
+        final testPath = '/Users/neil/Library/CloudStorage/Nutstore-initialneil@gmail.com/Nutstore/Reading/Papers';
+        if (await Directory(testPath).exists()) {
+          // Don't await — let it run after UI is up
+          addEntry(testPath);
+        }
+      }
     } catch (e) {
       _error = 'Failed to initialize: $e';
       print(_error);
@@ -285,6 +287,9 @@ class AppState extends ChangeNotifier {
         return;
       }
 
+      _isLoading = true;
+      notifyListeners();
+
       final name = p.basename(folderPath);
       final entry = Entry(path: folderPath, name: name);
       final id = await _db.insertEntry(entry);
@@ -295,19 +300,23 @@ class AppState extends ChangeNotifier {
         addedAt: entry.addedAt,
       );
 
-      // Recover from manifest if available
+      // Recover from manifest if available (fast — reads cached metadata)
       await _scannerService.recoverFromManifest(insertedEntry);
 
-      // Scan for papers
-      await _scannerService.scanEntry(insertedEntry);
+      // Scan for papers (fast — just finds files on disk, inserts into DB)
+      final result = await _scannerService.scanEntry(insertedEntry);
 
-      // Process new papers in background
-      await _processNewPapersForEntry(insertedEntry);
-
+      // Show UI immediately with papers (filenames as titles)
+      _isLoading = false;
       await refresh();
+
+      // Process new papers in background (text extraction, thumbnails)
+      // Fire-and-forget — UI updates incrementally
+      _processNewPapersBackground(result.newPapers, insertedEntry);
     } catch (e) {
       _error = 'Failed to add entry: $e';
       print(_error);
+      _isLoading = false;
       notifyListeners();
     }
   }
@@ -343,55 +352,42 @@ class AppState extends ChangeNotifier {
 
   /// Scan all entries for new, removed, and renamed papers
   Future<void> scanAllEntries() async {
-    _isLoading = true;
-    notifyListeners();
-
     try {
       final results = await _scannerService.scanAllEntries();
 
-      // Process new papers in background for each entry, matched by ID
+      // Update accessibility per entry
       final entries = await _db.getAllEntries();
       final entriesById = {for (final e in entries) e.id: e};
       for (final result in results) {
         final entry = result.entryId != null ? entriesById[result.entryId] : null;
         if (entry == null) continue;
-
-        if (result.newPapers.isNotEmpty) {
-          for (final paper in result.newPapers) {
-            await _scannerService.processNewPaper(paper, entry,
-                skipBibtex: true);
-          }
-        }
-
-        // Update accessibility
         entry.isAccessible = result.entryAccessible;
+
+        // Fire-and-forget background processing for new papers
+        if (result.newPapers.isNotEmpty) {
+          _processNewPapersBackground(result.newPapers, entry);
+        }
       }
 
       await refresh();
     } catch (e) {
       _error = 'Failed to scan entries: $e';
       print(_error);
+      notifyListeners();
     }
-
-    _isLoading = false;
-    notifyListeners();
   }
 
   /// Refresh a single entry by re-scanning it
   Future<void> refreshEntry(Entry entry) async {
     try {
       final result = await _scannerService.scanEntry(entry);
-
-      // Process new papers
-      if (result.newPapers.isNotEmpty) {
-        for (final paper in result.newPapers) {
-          await _scannerService.processNewPaper(paper, entry);
-        }
-      }
-
       entry.isAccessible = result.entryAccessible;
-
       await refresh();
+
+      // Background processing for any new papers
+      if (result.newPapers.isNotEmpty) {
+        _processNewPapersBackground(result.newPapers, entry);
+      }
     } catch (e) {
       _error = 'Failed to refresh entry: $e';
       print(_error);
@@ -399,16 +395,35 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// Process new papers for an entry (extract text, thumbnails, etc.)
-  Future<void> _processNewPapersForEntry(Entry entry) async {
-    final papers = await _db.getPapersByEntry(entry.id!);
+  /// Background processing counter for UI status
+  int _processingCount = 0;
+  int get processingCount => _processingCount;
+
+  /// Process new papers in background — fire and forget.
+  /// Extracts text, generates thumbnails, updates UI incrementally.
+  void _processNewPapersBackground(List<Paper> papers, Entry entry) async {
+    _processingCount += papers.length;
+    notifyListeners();
+
     for (final paper in papers) {
-      // Only process papers that haven't been processed yet
-      if (paper.extractedText == null || paper.extractedText!.isEmpty) {
-        await _scannerService.processNewPaper(paper, entry,
-            skipBibtex: true);
+      try {
+        await _scannerService.processNewPaper(paper, entry, skipBibtex: true);
+      } catch (e) {
+        print('Background processing error for ${paper.filePath}: $e');
+      }
+
+      _processingCount--;
+      // Refresh UI every 10 papers to avoid excessive rebuilds
+      if (_processingCount % 10 == 0 || _processingCount == 0) {
+        await _loadPapers();
+        notifyListeners();
       }
     }
+
+    // Final refresh
+    await _loadPapers();
+    await _loadEntries();
+    notifyListeners();
   }
 
   // ==================== Config Methods ====================
