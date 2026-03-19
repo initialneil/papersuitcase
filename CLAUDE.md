@@ -17,6 +17,15 @@ flutter test             # Run tests
 flutter clean            # Clean build artifacts
 ```
 
+### Supabase
+
+```bash
+supabase start           # Start local Supabase (Docker)
+supabase db push         # Push migrations to remote
+supabase functions deploy # Deploy all Edge Functions
+supabase secrets set KEY=VAL # Set environment secret
+```
+
 ## Architecture
 
 ### State Management
@@ -38,12 +47,15 @@ SQLite via `sqflite_common_ffi` (not drift). Schema is manually managed in `lib/
 - `PaperFolder` — folder model supporting both database-managed and symbolic (linked) external folders
 - `ImportData` — multi-stage import workflow structures (PendingImport, FolderScanResult, ArxivMetadata)
 
+### Supabase Backend
+Supabase provides auth (email/password + magic link), cloud sync (papers & tags), Edge Functions for LLM chat (`chat-with-paper`) and trending computation (`compute-trending`), and a recommendation engine. Key services: `SupabaseService` (auth/init), `SyncService` (bidirectional sync), `LlmChatService` (paper Q&A), `RecommendationService` (discover tab). User profiles track tier (`free`/`pro`) and monthly LLM usage.
+
 ### UI Structure
 Single `MainScreen` with sidebar (`TagSidebar`), content area (`PaperGrid`), and embedded PDF viewer. Custom macOS-style title bar via `window_manager`. Supports drag-and-drop import via `desktop_drop`.
 
 ### Key Patterns
 - **Desktop-first**: Custom title bar, macOS-specific paths, window management
-- **Local-first**: All data in SQLite, no cloud sync
+- **Local-first**: All data in SQLite, optional cloud sync via Supabase
 - **Symbolic folders**: Can reference external folder paths without copying files into the database
 - **Navigation history**: Back/forward stack tracking tag/folder/search state changes
 - **Multi-stage import**: Folder scan → user selection → confirmation → import with progress tracking

@@ -22,6 +22,205 @@ class SettingsView extends StatelessWidget {
             ),
             const SizedBox(height: 32),
 
+            _SectionHeader(title: 'Account'),
+            _SettingBox(
+              child: appState.isLoggedIn
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Account info
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 20,
+                                backgroundColor:
+                                    Theme.of(context).colorScheme.primaryContainer,
+                                child: Icon(
+                                  Icons.person,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onPrimaryContainer,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      appState.currentUser?.email ?? 'Unknown',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: appState.userTier == 'pro'
+                                            ? Colors.amber.withValues(alpha: 0.2)
+                                            : Theme.of(context)
+                                                .colorScheme
+                                                .surfaceContainerHighest,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        appState.userTier.toUpperCase(),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: appState.userTier == 'pro'
+                                              ? Colors.amber.shade800
+                                              : Theme.of(context)
+                                                  .colorScheme
+                                                  .outline,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        // Chat usage
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.chat_outlined,
+                                size: 20,
+                                color: Theme.of(context).colorScheme.outline,
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                '${appState.llmCallsThisMonth} / ${appState.llmCallsLimit} calls this month',
+                              ),
+                              const Spacer(),
+                              SizedBox(
+                                width: 100,
+                                child: LinearProgressIndicator(
+                                  value: appState.llmCallsLimit > 0
+                                      ? (appState.llmCallsThisMonth /
+                                              appState.llmCallsLimit)
+                                          .clamp(0.0, 1.0)
+                                      : 0,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        // Sync status
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.sync,
+                                size: 20,
+                                color: Theme.of(context).colorScheme.outline,
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                appState.lastSyncedAt != null
+                                    ? 'Last synced: ${_formatSyncTime(appState.lastSyncedAt!)}'
+                                    : 'Not synced yet',
+                              ),
+                              const Spacer(),
+                              TextButton(
+                                onPressed: appState.isSyncing
+                                    ? null
+                                    : () => appState.triggerSync(),
+                                child: Text(
+                                  appState.isSyncing
+                                      ? 'Syncing...'
+                                      : 'Sync now',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        // Sign out
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              onPressed: () => appState.signOut(),
+                              icon: const Icon(Icons.logout, size: 18),
+                              label: const Text('Sign out'),
+                              style: TextButton.styleFrom(
+                                foregroundColor:
+                                    Theme.of(context).colorScheme.error,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  : Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.cloud_off,
+                            size: 32,
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Not signed in',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Sign in to sync, get recommendations, and chat with papers',
+                                  style: TextStyle(
+                                    color:
+                                        Theme.of(context).colorScheme.outline,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          FilledButton(
+                            onPressed: () => appState.resetSkipAuth(),
+                            child: const Text('Sign in'),
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+
+            const SizedBox(height: 32),
+
             _SectionHeader(title: 'Appearance'),
             _SettingBox(
               child: Column(
@@ -114,6 +313,15 @@ class SettingsView extends StatelessWidget {
         );
       },
     );
+  }
+
+  String _formatSyncTime(DateTime time) {
+    final now = DateTime.now();
+    final diff = now.difference(time);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
   }
 
   Future<void> _pickCustomApp(BuildContext context, AppState appState) async {
