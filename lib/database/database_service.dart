@@ -33,12 +33,6 @@ class DatabaseService {
     // Ensure directory exists
     await Directory(appDir.path).create(recursive: true);
 
-    // Clean break: delete existing database if it exists
-    final dbFile = File(dbPath);
-    if (await dbFile.exists()) {
-      await dbFile.delete();
-    }
-
     return await openDatabase(
       dbPath,
       version: 5,

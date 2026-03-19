@@ -117,15 +117,6 @@ class AppState extends ChangeNotifier {
       // Push initial state
       _pushHistory();
       await refresh();
-
-      // Auto-add test entry on first launch (after UI is shown)
-      if (_entries.isEmpty) {
-        final testPath = '/Users/neil/Library/CloudStorage/Nutstore-initialneil@gmail.com/Nutstore/Reading/Papers';
-        if (await Directory(testPath).exists()) {
-          // Don't await — let it run after UI is up
-          addEntry(testPath);
-        }
-      }
     } catch (e) {
       _error = 'Failed to initialize: $e';
       print(_error);
