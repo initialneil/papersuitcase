@@ -33,20 +33,45 @@ class TagSidebar extends StatelessWidget {
 
               const Divider(height: 1),
 
-              // Scrollable entries + tags sections
+              // Entries and Tags as separate scrollable sections
+              // Each gets at least 1/4 of available height
               Expanded(
                 child: appState.isConfigMode
                     ? _ConfigNavigation(
                         selectedCategory: 'Appearance',
                         onSelect: (category) {},
                       )
-                    : ListView(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        children: const [
-                          EntrySidebarSection(),
-                          SizedBox(height: 8),
-                          TagSidebarSection(),
-                        ],
+                    : LayoutBuilder(
+                        builder: (context, constraints) {
+                          final minHeight = constraints.maxHeight * 0.25;
+                          return Column(
+                            children: [
+                              // Entries section — takes available space, min 1/4
+                              Expanded(
+                                flex: 3,
+                                child: ConstrainedBox(
+                                  constraints: BoxConstraints(minHeight: minHeight),
+                                  child: const SingleChildScrollView(
+                                    padding: EdgeInsets.only(top: 8),
+                                    child: EntrySidebarSection(),
+                                  ),
+                                ),
+                              ),
+                              const Divider(height: 1),
+                              // Tags section — takes available space, min 1/4
+                              Expanded(
+                                flex: 2,
+                                child: ConstrainedBox(
+                                  constraints: BoxConstraints(minHeight: minHeight),
+                                  child: const SingleChildScrollView(
+                                    padding: EdgeInsets.only(top: 8, bottom: 8),
+                                    child: TagSidebarSection(),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       ),
               ),
 
