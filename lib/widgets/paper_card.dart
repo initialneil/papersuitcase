@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 
 import '../models/paper.dart';
 import '../services/manifest_service.dart';
+import '../services/pdf_service.dart';
 import '../providers/app_state.dart';
 import 'edit_tags_dialog.dart';
 
@@ -53,7 +55,6 @@ class _PaperCardState extends State<PaperCard> {
     Future.microtask(() async {
       if (!mounted) return;
 
-      // Resolve thumbnail via ManifestService using entry path
       final appState = context.read<AppState>();
       final entry = appState.entries
           .where((e) => e.id == widget.paper.entryId)
@@ -65,8 +66,18 @@ class _PaperCardState extends State<PaperCard> {
         widget.paper.filePath,
       );
 
-      if (mounted && await File(thumbPath).exists()) {
-        setState(() => _thumbnailPath = thumbPath);
+      // Check if thumbnail exists
+      if (await File(thumbPath).exists()) {
+        if (mounted) setState(() => _thumbnailPath = thumbPath);
+        return;
+      }
+
+      // Generate on demand if missing (lazy thumbnail generation)
+      final fullPath = p.join(entry.path, widget.paper.filePath);
+      final result =
+          await PdfService.generateThumbnailToPath(fullPath, thumbPath);
+      if (mounted && result != null) {
+        setState(() => _thumbnailPath = result);
       }
     });
   }

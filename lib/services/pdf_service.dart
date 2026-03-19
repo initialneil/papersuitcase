@@ -1,88 +1,101 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:pdf_render/pdf_render.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart' as syncfusion;
 
+/// Top-level function for Isolate.run — extracts title + text from PDF bytes.
+/// Must be top-level (not a method) for isolate compatibility.
+Map<String, String> _extractPdfDataSync(List<int> bytes) {
+  String title = '';
+  String text = '';
+
+  try {
+    final document = syncfusion.PdfDocument(inputBytes: bytes);
+
+    // Extract title from metadata
+    try {
+      final info = document.documentInformation;
+      // ignore: unnecessary_null_comparison
+      if (info != null && info.title != null && info.title.isNotEmpty) {
+        title = info.title;
+      }
+    } catch (_) {}
+
+    // Fallback: first line of first page
+    if (title.isEmpty && document.pages.count > 0) {
+      try {
+        final firstPageText = syncfusion.PdfTextExtractor(document)
+            .extractText(startPageIndex: 0, endPageIndex: 0);
+        final lines =
+            firstPageText.split('\n').where((l) => l.trim().isNotEmpty);
+        if (lines.isNotEmpty) {
+          title = lines.first.trim();
+          if (title.length > 200) title = title.substring(0, 200);
+        }
+      } catch (_) {}
+    }
+
+    // Extract full text (limit to first 20 pages for speed)
+    try {
+      final buf = StringBuffer();
+      final maxPages =
+          document.pages.count < 20 ? document.pages.count : 20;
+      for (int i = 0; i < maxPages; i++) {
+        buf.writeln(syncfusion.PdfTextExtractor(document)
+            .extractText(startPageIndex: i, endPageIndex: i));
+      }
+      text = buf.toString();
+    } catch (_) {}
+
+    document.dispose();
+  } catch (_) {}
+
+  return {'title': title, 'text': text};
+}
+
 /// Service for PDF file operations
 class PdfService {
-  /// Extract text from PDF
-  Future<String> extractText(String filePath) async {
+  /// Extract title and text from PDF in a background isolate.
+  /// Returns {'title': ..., 'text': ...}.
+  /// This runs CPU-heavy Syncfusion parsing off the main thread.
+  Future<Map<String, String>> extractInIsolate(String filePath) async {
     try {
       final file = File(filePath);
       if (!await file.exists()) {
-        return '';
+        return {
+          'title': p.basenameWithoutExtension(filePath),
+          'text': ''
+        };
       }
 
       final bytes = await file.readAsBytes();
-      final document = syncfusion.PdfDocument(inputBytes: bytes);
+      final result = await Isolate.run(() => _extractPdfDataSync(bytes));
 
-      final StringBuffer text = StringBuffer();
-      for (int i = 0; i < document.pages.count; i++) {
-        final pageText = syncfusion.PdfTextExtractor(
-          document,
-        ).extractText(startPageIndex: i, endPageIndex: i);
-        text.writeln(pageText);
+      // If title is empty, fall back to filename
+      if (result['title'] == null || result['title']!.isEmpty) {
+        result['title'] = p.basenameWithoutExtension(filePath);
       }
-
-      document.dispose();
-      return text.toString();
+      return result;
     } catch (e) {
-      print('Error extracting text from PDF: $e');
-      return '';
+      return {
+        'title': p.basenameWithoutExtension(filePath),
+        'text': ''
+      };
     }
   }
 
-  /// Extract title from PDF (uses metadata or first line of text)
+  /// Extract text from PDF (legacy — runs on main isolate)
+  Future<String> extractText(String filePath) async {
+    final result = await extractInIsolate(filePath);
+    return result['text'] ?? '';
+  }
+
+  /// Extract title from PDF (legacy — runs on main isolate)
   Future<String> extractTitle(String filePath) async {
-    try {
-      final file = File(filePath);
-      if (!await file.exists()) {
-        return p.basenameWithoutExtension(filePath);
-      }
-
-      final bytes = await file.readAsBytes();
-      final document = syncfusion.PdfDocument(inputBytes: bytes);
-
-      // Try PDF metadata title first
-      try {
-        final info = document.documentInformation;
-        // ignore: unnecessary_null_comparison
-        if (info != null && info.title != null && info.title.isNotEmpty) {
-          document.dispose();
-          return info.title;
-        }
-      } catch (_) {
-        // Metadata access failed
-      }
-
-      // Try extracting from first page
-      if (document.pages.count > 0) {
-        final firstPageText = syncfusion.PdfTextExtractor(
-          document,
-        ).extractText(startPageIndex: 0, endPageIndex: 0);
-
-        // Get first non-empty line as title
-        final lines = firstPageText
-            .split('\n')
-            .where((l) => l.trim().isNotEmpty);
-        if (lines.isNotEmpty) {
-          var title = lines.first.trim();
-          // Limit length
-          if (title.length > 200) {
-            title = title.substring(0, 200);
-          }
-          document.dispose();
-          return title;
-        }
-      }
-
-      document.dispose();
-      return p.basenameWithoutExtension(filePath);
-    } catch (e) {
-      print('Error extracting title from PDF: $e');
-      return p.basenameWithoutExtension(filePath);
-    }
+    final result = await extractInIsolate(filePath);
+    return result['title'] ?? p.basenameWithoutExtension(filePath);
   }
 
   /// Check if file is a valid PDF

@@ -169,35 +169,37 @@ class EntryScannerService {
 
   /// Background processing for a newly detected paper.
   /// Set [skipBibtex] to true during bulk scans to avoid overwhelming DBLP.
+  /// Set [skipManifest] to true during bulk scans to batch manifest writes at the end.
   Future<void> processNewPaper(Paper paper, Entry entry,
-      {bool skipBibtex = false}) async {
+      {bool skipBibtex = false, bool skipManifest = false}) async {
     try {
       final fullPath = p.join(entry.path, paper.filePath);
       final relativePath = paper.filePath;
 
-      // Extract text
+      // Extract title + text in background isolate (off main thread!)
       String extractedText = '';
-      try {
-        extractedText = await _pdfService.extractText(fullPath);
-      } catch (e) {
-        print('Error extracting text for ${paper.filePath}: $e');
-      }
-
-      // Extract title
       String title = paper.title;
       try {
-        title = await _pdfService.extractTitle(fullPath);
+        final result = await _pdfService
+            .extractInIsolate(fullPath)
+            .timeout(const Duration(seconds: 10),
+                onTimeout: () => {'title': paper.title, 'text': ''});
+        title = result['title'] ?? paper.title;
+        extractedText = result['text'] ?? '';
       } catch (e) {
-        print('Error extracting title for ${paper.filePath}: $e');
+        print('Error extracting PDF data for ${paper.filePath}: $e');
       }
 
-      // Generate thumbnail
-      final thumbPath =
-          ManifestService.thumbnailPath(entry.path, relativePath);
-      try {
-        await PdfService.generateThumbnailToPath(fullPath, thumbPath);
-      } catch (e) {
-        print('Error generating thumbnail for ${paper.filePath}: $e');
+      // Thumbnails: skip during bulk (skipManifest=true), generate lazily by UI
+      if (!skipManifest) {
+        final thumbPath =
+            ManifestService.thumbnailPath(entry.path, relativePath);
+        try {
+          await PdfService.generateThumbnailToPath(fullPath, thumbPath)
+              .timeout(const Duration(seconds: 3), onTimeout: () => null);
+        } catch (e) {
+          print('Error generating thumbnail for ${paper.filePath}: $e');
+        }
       }
 
       // Save extracted text to cache
@@ -248,21 +250,23 @@ class EntryScannerService {
         }
       }
 
-      // Update manifest
-      try {
-        await ManifestService.updatePaperInManifest(
-          entry.path,
-          relativePath,
-          title: title,
-          authors: paper.authors,
-          abstract_: paper.abstract,
-          arxivId: paper.arxivId,
-          bibtex: bibtex,
-          bibStatus: bibStatus,
-          addedAt: paper.addedAt.toIso8601String(),
-        );
-      } catch (e) {
-        print('Error updating manifest for ${paper.filePath}: $e');
+      // Update manifest (skipped during bulk processing — caller batches it)
+      if (!skipManifest) {
+        try {
+          await ManifestService.updatePaperInManifest(
+            entry.path,
+            relativePath,
+            title: title,
+            authors: paper.authors,
+            abstract_: paper.abstract,
+            arxivId: paper.arxivId,
+            bibtex: bibtex,
+            bibStatus: bibStatus,
+            addedAt: paper.addedAt.toIso8601String(),
+          );
+        } catch (e) {
+          print('Error updating manifest for ${paper.filePath}: $e');
+        }
       }
     } catch (e) {
       print('Error processing new paper ${paper.filePath}: $e');

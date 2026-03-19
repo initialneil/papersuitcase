@@ -401,29 +401,65 @@ class AppState extends ChangeNotifier {
 
   /// Process new papers in background — fire and forget.
   /// Extracts text, generates thumbnails, updates UI incrementally.
+  /// Uses yields between papers to keep the UI responsive.
   void _processNewPapersBackground(List<Paper> papers, Entry entry) async {
     _processingCount += papers.length;
     notifyListeners();
 
-    for (final paper in papers) {
+    for (int i = 0; i < papers.length; i++) {
       try {
-        await _scannerService.processNewPaper(paper, entry, skipBibtex: true);
+        await _scannerService.processNewPaper(papers[i], entry,
+            skipBibtex: true, skipManifest: true);
       } catch (e) {
-        print('Background processing error for ${paper.filePath}: $e');
+        print('Background processing error for ${papers[i].filePath}: $e');
       }
 
       _processingCount--;
-      // Refresh UI every 10 papers to avoid excessive rebuilds
-      if (_processingCount % 10 == 0 || _processingCount == 0) {
+
+      // Yield to event loop between papers to keep UI responsive
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      // Refresh UI every 25 papers to avoid excessive rebuilds
+      if (i % 25 == 0 || _processingCount == 0) {
         await _loadPapers();
         notifyListeners();
       }
+    }
+
+    // Write manifest once in batch at the end
+    try {
+      await _batchUpdateManifest(entry);
+    } catch (e) {
+      print('Error batch updating manifest: $e');
     }
 
     // Final refresh
     await _loadPapers();
     await _loadEntries();
     notifyListeners();
+  }
+
+  /// Batch-write all papers for an entry into manifest.json in a single pass.
+  Future<void> _batchUpdateManifest(Entry entry) async {
+    final papers = await _db.getPapersByEntry(entry.id!);
+    final manifestPapers = <String, dynamic>{};
+    for (final paper in papers) {
+      final tags = await _db.getTagsForPaper(paper.id!);
+      manifestPapers[paper.filePath] = {
+        'title': paper.title,
+        'authors': paper.authors ?? '',
+        'abstract': paper.abstract ?? '',
+        'arxiv_id': paper.arxivId ?? '',
+        'bibtex': paper.bibtex ?? '',
+        'bib_status': paper.bibStatus,
+        'tags': tags.map((t) => t.name).toList(),
+        'added_at': paper.addedAt.toIso8601String(),
+      };
+    }
+    await ManifestService.writeManifest(entry.path, {
+      'version': 1,
+      'papers': manifestPapers,
+    });
   }
 
   // ==================== Config Methods ====================
