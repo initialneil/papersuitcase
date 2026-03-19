@@ -15,6 +15,7 @@ import '../services/arxiv_service.dart';
 import '../services/entry_scanner_service.dart';
 import '../services/manifest_service.dart';
 import '../services/supabase_service.dart';
+import '../services/sync_service.dart';
 
 class _NavigationState {
   final Tag? tag;
@@ -82,6 +83,12 @@ class AppState extends ChangeNotifier {
   bool _isAuthLoading = false;
   bool _hasSkippedAuth = false;
 
+  // Sync state
+  SyncService? _syncService;
+  bool _isSyncing = false;
+  DateTime? _lastSyncedAt;
+  String? _syncError;
+
   // Getters
   List<Paper> get papers => _papers;
   List<Tag> get tagTree => _tagTree;
@@ -106,6 +113,11 @@ class AppState extends ChangeNotifier {
   String? get customPdfAppPath => _customPdfAppPath;
   List<String> get customPdfApps => _customPdfApps;
 
+  // Sync Getters
+  bool get isSyncing => _isSyncing;
+  DateTime? get lastSyncedAt => _lastSyncedAt;
+  String? get syncError => _syncError;
+
   // Auth Getters
   User? get currentUser => _currentUser;
   Map<String, dynamic>? get userProfile => _userProfile;
@@ -128,6 +140,7 @@ class AppState extends ChangeNotifier {
     try {
       await DatabaseService.initialize();
       _scannerService = EntryScannerService(_db, _pdfService);
+      _syncService = SyncService(_db);
       await _loadSettings();
 
       _entries = await _db.getAllEntries();
@@ -151,6 +164,7 @@ class AppState extends ChangeNotifier {
           SupabaseService.getProfile().then((profile) {
             _userProfile = profile;
             notifyListeners();
+            triggerSync(); // Auto-sync on login
           });
         } else {
           _userProfile = null;
@@ -538,6 +552,9 @@ class AppState extends ChangeNotifier {
     _customPdfAppPath = prefs.getString('customPdfAppPath');
     _customPdfApps = prefs.getStringList('customPdfApps') ?? [];
     _hasSkippedAuth = prefs.getBool('has_skipped_auth') ?? false;
+
+    final lastSyncStr = prefs.getString('last_synced_at');
+    if (lastSyncStr != null) _lastSyncedAt = DateTime.parse(lastSyncStr);
   }
 
   void toggleConfigMode() {
@@ -1057,6 +1074,31 @@ class AppState extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('has_skipped_auth', false);
     notifyListeners();
+  }
+
+  /// Trigger a sync. Called after login, on manual trigger, or periodically.
+  Future<void> triggerSync() async {
+    if (_isSyncing || !isLoggedIn) return;
+    _isSyncing = true;
+    _syncError = null;
+    notifyListeners();
+
+    try {
+      final result = await _syncService!.sync();
+      if (result.success) {
+        _lastSyncedAt = DateTime.now();
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('last_synced_at', _lastSyncedAt!.toIso8601String());
+        _syncError = null;
+      } else {
+        _syncError = result.error;
+      }
+    } catch (e) {
+      _syncError = e.toString();
+    } finally {
+      _isSyncing = false;
+      notifyListeners();
+    }
   }
 
   /// Clear error

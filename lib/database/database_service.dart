@@ -735,6 +735,66 @@ class DatabaseService {
     return maps.map((map) => Tag.fromMap(map)).toList();
   }
 
+  // ==================== Sync Operations ====================
+
+  /// Get all papers marked dirty (need sync).
+  Future<List<Paper>> getDirtyPapers() async {
+    final db = await database;
+    final maps = await db.query('papers', where: 'dirty = 1 AND deleted_at IS NULL');
+    return maps.map((m) => Paper.fromMap(m)).toList();
+  }
+
+  /// Get all soft-deleted papers that need sync.
+  Future<List<Paper>> getDeletedPapers() async {
+    final db = await database;
+    final maps = await db.query('papers', where: 'deleted_at IS NOT NULL AND dirty = 1');
+    return maps.map((m) => Paper.fromMap(m)).toList();
+  }
+
+  /// Get all tags marked dirty.
+  Future<List<Tag>> getDirtyTags() async {
+    final db = await database;
+    final maps = await db.query('tags', where: 'dirty = 1');
+    return maps.map((m) => Tag.fromMap(m)).toList();
+  }
+
+  /// Mark a paper as synced (dirty=0, store remote_id).
+  Future<void> markPaperSynced(int localId, int remoteId) async {
+    final db = await database;
+    await db.update('papers', {'dirty': 0, 'remote_id': remoteId}, where: 'id = ?', whereArgs: [localId]);
+  }
+
+  /// Mark a tag as synced.
+  Future<void> markTagSynced(int localId, int remoteId) async {
+    final db = await database;
+    await db.update('tags', {'dirty': 0, 'remote_id': remoteId}, where: 'id = ?', whereArgs: [localId]);
+  }
+
+  /// Get tag names for a paper (for shared catalog contribution).
+  Future<List<String>> getTagNamesForPaper(int paperId) async {
+    final db = await database;
+    final results = await db.rawQuery('''
+      SELECT t.name FROM tags t
+      JOIN paper_tags pt ON t.id = pt.tag_id
+      WHERE pt.paper_id = ?
+    ''', [paperId]);
+    return results.map((r) => r['name'] as String).toList();
+  }
+
+  /// Get map of local tag ID to remote ID for sync.
+  Future<Map<int, int?>> getTagRemoteIdMap() async {
+    final db = await database;
+    final results = await db.query('tags', columns: ['id', 'remote_id']);
+    return {for (final r in results) r['id'] as int: r['remote_id'] as int?};
+  }
+
+  /// Get all papers including those with remote_ids (for paper-tag association sync).
+  Future<List<Paper>> getAllPapersIncludingDeleted() async {
+    final db = await database;
+    final maps = await db.query('papers');
+    return maps.map((m) => Paper.fromMap(m)).toList();
+  }
+
   /// Close database
   Future<void> close() async {
     final db = await database;

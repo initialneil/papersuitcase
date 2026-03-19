@@ -75,6 +75,12 @@ class TagSidebar extends StatelessWidget {
                       ),
               ),
 
+              // Sync indicator (only when logged in)
+              if (appState.isLoggedIn) ...[
+                const Divider(height: 1),
+                _SyncIndicator(appState: appState),
+              ],
+
               const Divider(height: 1),
 
               // Settings button
@@ -226,6 +232,92 @@ class _ConfigNavigation extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+/// Sync status indicator shown when logged in.
+class _SyncIndicator extends StatelessWidget {
+  final AppState appState;
+
+  const _SyncIndicator({required this.appState});
+
+  String _timeAgo(DateTime dateTime) {
+    final diff = DateTime.now().difference(dateTime);
+    if (diff.inSeconds < 60) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurface.withValues(alpha: 0.5);
+
+    if (appState.isSyncing) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2, color: muted),
+            ),
+            const SizedBox(width: 8),
+            Text('Syncing...', style: TextStyle(fontSize: 12, color: muted)),
+          ],
+        ),
+      );
+    }
+
+    if (appState.syncError != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, size: 14, color: theme.colorScheme.error),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Sync failed',
+                style: TextStyle(fontSize: 12, color: theme.colorScheme.error),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            InkWell(
+              onTap: () => appState.triggerSync(),
+              child: Icon(Icons.refresh, size: 14, color: muted),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (appState.lastSyncedAt != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            Icon(Icons.cloud_done_outlined, size: 14, color: muted),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Synced ${_timeAgo(appState.lastSyncedAt!)}',
+                style: TextStyle(fontSize: 12, color: muted),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            InkWell(
+              onTap: () => appState.triggerSync(),
+              child: Icon(Icons.refresh, size: 14, color: muted),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
   }
 }
 
