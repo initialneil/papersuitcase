@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -35,8 +37,9 @@ class DatabaseService {
 
     return await openDatabase(
       dbPath,
-      version: 5,
+      version: 6,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
   }
 
@@ -66,7 +69,12 @@ class DatabaseService {
         bibtex TEXT,
         bib_status TEXT NOT NULL DEFAULT 'none',
         content_hash TEXT,
-        added_at TEXT NOT NULL
+        added_at TEXT NOT NULL,
+        sync_key TEXT,
+        remote_id INTEGER,
+        updated_at TEXT,
+        deleted_at TEXT,
+        dirty INTEGER NOT NULL DEFAULT 1
       )
     ''');
 
@@ -77,7 +85,9 @@ class DatabaseService {
         name TEXT NOT NULL,
         parent_id INTEGER,
         FOREIGN KEY (parent_id) REFERENCES tags(id) ON DELETE SET NULL,
-        UNIQUE(name, parent_id)
+        UNIQUE(name, parent_id),
+        remote_id INTEGER,
+        dirty INTEGER NOT NULL DEFAULT 1
       )
     ''');
 
@@ -138,6 +148,52 @@ class DatabaseService {
     await db.execute('CREATE INDEX idx_paper_tags_tag ON paper_tags(tag_id)');
   }
 
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 6) {
+      await db.execute('ALTER TABLE papers ADD COLUMN sync_key TEXT');
+      await db.execute('ALTER TABLE papers ADD COLUMN remote_id INTEGER');
+      await db.execute('ALTER TABLE papers ADD COLUMN updated_at TEXT');
+      await db.execute('ALTER TABLE papers ADD COLUMN deleted_at TEXT');
+      await db.execute('ALTER TABLE papers ADD COLUMN dirty INTEGER NOT NULL DEFAULT 1');
+      await db.execute('ALTER TABLE tags ADD COLUMN remote_id INTEGER');
+      await db.execute('ALTER TABLE tags ADD COLUMN dirty INTEGER NOT NULL DEFAULT 1');
+      await _backfillSyncKeys(db);
+    }
+  }
+
+  Future<void> _backfillSyncKeys(Database db) async {
+    final papers = await db.query('papers');
+    for (final paper in papers) {
+      final id = paper['id'] as int;
+      final arxivId = paper['arxiv_id'] as String?;
+      final contentHash = paper['content_hash'] as String?;
+      final title = paper['title'] as String? ?? '';
+      final authors = paper['authors'] as String? ?? '';
+
+      final syncKey = _computeSyncKey(
+        arxivId: arxivId,
+        contentHash: contentHash,
+        title: title,
+        authors: authors,
+      );
+
+      await db.update(
+        'papers',
+        {'sync_key': syncKey, 'updated_at': DateTime.now().toIso8601String()},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    }
+  }
+
+  static String _computeSyncKey({String? arxivId, String? contentHash, required String title, required String authors}) {
+    if (arxivId != null && arxivId.isNotEmpty) return 'arxiv:$arxivId';
+    if (contentHash != null && contentHash.isNotEmpty) return 'hash:$contentHash';
+    final input = '${title.toLowerCase()}${authors.toLowerCase()}';
+    final hash = sha256.convert(utf8.encode(input)).toString();
+    return 'title:$hash';
+  }
+
   // ==================== Entry Operations ====================
 
   /// Insert a new entry
@@ -173,13 +229,24 @@ class DatabaseService {
   /// Insert a new paper
   Future<int> insertPaper(Paper paper) async {
     final db = await database;
-    return await db.insert('papers', paper.toMap());
+    final values = paper.toMap();
+    if (values['sync_key'] == null) {
+      values['sync_key'] = _computeSyncKey(
+        arxivId: values['arxiv_id'] as String?,
+        contentHash: values['content_hash'] as String?,
+        title: values['title'] as String? ?? '',
+        authors: values['authors'] as String? ?? '',
+      );
+    }
+    values['dirty'] = 1;
+    values['updated_at'] = DateTime.now().toIso8601String();
+    return await db.insert('papers', values);
   }
 
   /// Get all papers
   Future<List<Paper>> getAllPapers() async {
     final db = await database;
-    final maps = await db.query('papers', orderBy: 'added_at DESC');
+    final maps = await db.query('papers', where: 'deleted_at IS NULL', orderBy: 'added_at DESC');
 
     List<Paper> papers = [];
     for (final map in maps) {
@@ -194,7 +261,7 @@ class DatabaseService {
     final db = await database;
     final maps = await db.query(
       'papers',
-      where: 'LOWER(title) = ?',
+      where: 'LOWER(title) = ? AND deleted_at IS NULL',
       whereArgs: [title.toLowerCase()],
       limit: 1,
     );
@@ -210,7 +277,7 @@ class DatabaseService {
   Future<List<Paper>> getPapersByEntry(int entryId) async {
     final db = await database;
     final maps = await db.query('papers',
-        where: 'entry_id = ?',
+        where: 'entry_id = ? AND deleted_at IS NULL',
         whereArgs: [entryId],
         orderBy: 'added_at DESC');
     List<Paper> papers = [];
@@ -226,7 +293,7 @@ class DatabaseService {
       int entryId, String subfolderPrefix) async {
     final db = await database;
     final maps = await db.query('papers',
-        where: 'entry_id = ? AND file_path LIKE ?',
+        where: 'entry_id = ? AND file_path LIKE ? AND deleted_at IS NULL',
         whereArgs: [entryId, '$subfolderPrefix%'],
         orderBy: 'added_at DESC');
     List<Paper> papers = [];
@@ -241,7 +308,7 @@ class DatabaseService {
   Future<Paper?> getPaperByFilePath(String filePath) async {
     final db = await database;
     final maps = await db.query('papers',
-        where: 'file_path = ?', whereArgs: [filePath], limit: 1);
+        where: 'file_path = ? AND deleted_at IS NULL', whereArgs: [filePath], limit: 1);
     if (maps.isEmpty) return null;
     final tags = await getTagsForPaper(maps.first['id'] as int);
     return Paper.fromMap(maps.first, tags: tags);
@@ -258,7 +325,7 @@ class DatabaseService {
   Future<Map<int, int>> getEntryPaperCounts() async {
     final db = await database;
     final maps = await db.rawQuery(
-        'SELECT entry_id, COUNT(*) as count FROM papers GROUP BY entry_id');
+        'SELECT entry_id, COUNT(*) as count FROM papers WHERE deleted_at IS NULL GROUP BY entry_id');
     return {
       for (final m in maps) m['entry_id'] as int: m['count'] as int
     };
@@ -279,7 +346,7 @@ class DatabaseService {
       SELECT DISTINCT p.* FROM papers p
       INNER JOIN paper_tags pt ON p.id = pt.paper_id
       INNER JOIN descendant_tags dt ON pt.tag_id = dt.id
-      WHERE 1=1 $entryFilter
+      WHERE p.deleted_at IS NULL $entryFilter
       ORDER BY p.added_at DESC
     ''',
       [tagId],
@@ -300,7 +367,7 @@ class DatabaseService {
     final maps = await db.rawQuery('''
       SELECT p.* FROM papers p
       LEFT JOIN paper_tags pt ON p.id = pt.paper_id
-      WHERE pt.paper_id IS NULL $entryFilter
+      WHERE pt.paper_id IS NULL AND p.deleted_at IS NULL $entryFilter
       ORDER BY p.added_at DESC
     ''');
 
@@ -326,7 +393,7 @@ class DatabaseService {
       SELECT p.*, bm25(papers_fts) as rank
       FROM papers p
       INNER JOIN papers_fts ON p.id = papers_fts.rowid
-      WHERE papers_fts MATCH ?
+      WHERE papers_fts MATCH ? AND p.deleted_at IS NULL
       ORDER BY rank
     ''',
       [searchQuery],
@@ -340,10 +407,25 @@ class DatabaseService {
     return papers;
   }
 
-  /// Delete a paper
+  /// Soft-delete a paper (marks as deleted for sync, purged later)
   Future<void> deletePaper(int id) async {
     final db = await database;
-    await db.delete('papers', where: 'id = ?', whereArgs: [id]);
+    await db.update(
+      'papers',
+      {
+        'deleted_at': DateTime.now().toIso8601String(),
+        'dirty': 1,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Permanently delete papers that were soft-deleted more than [daysOld] days ago
+  Future<void> purgeOldDeletedPapers({int daysOld = 30}) async {
+    final db = await database;
+    final cutoff = DateTime.now().subtract(Duration(days: daysOld)).toIso8601String();
+    await db.delete('papers', where: 'deleted_at IS NOT NULL AND deleted_at < ?', whereArgs: [cutoff]);
   }
 
   /// Update a paper
@@ -352,9 +434,12 @@ class DatabaseService {
       throw ArgumentError('Cannot update paper without an ID');
     }
     final db = await database;
+    final values = paper.toMap();
+    values['dirty'] = 1;
+    values['updated_at'] = DateTime.now().toIso8601String();
     await db.update(
       'papers',
-      paper.toMap(),
+      values,
       where: 'id = ?',
       whereArgs: [paper.id],
     );
@@ -384,7 +469,7 @@ class DatabaseService {
     final db = await database;
     final result = await db.query(
       'papers',
-      where: 'file_path = ?',
+      where: 'file_path = ? AND deleted_at IS NULL',
       whereArgs: [filePath],
       limit: 1,
     );
@@ -407,7 +492,7 @@ class DatabaseService {
       final result = await db.query(
         'papers',
         columns: ['file_path'],
-        where: 'file_path IN ($placeholders)',
+        where: 'file_path IN ($placeholders) AND deleted_at IS NULL',
         whereArgs: chunk,
       );
 
@@ -443,7 +528,7 @@ class DatabaseService {
     }
 
     // Create new tag
-    final id = await db.insert('tags', {'name': name, 'parent_id': parentId});
+    final id = await db.insert('tags', {'name': name, 'parent_id': parentId, 'dirty': 1});
 
     return Tag(id: id, name: name, parentId: parentId);
   }
@@ -545,7 +630,7 @@ class DatabaseService {
     final result = await db.rawQuery('''
       SELECT COUNT(*) as count FROM papers p
       LEFT JOIN paper_tags pt ON p.id = pt.paper_id
-      WHERE pt.paper_id IS NULL
+      WHERE pt.paper_id IS NULL AND p.deleted_at IS NULL
     ''');
     return result.first['count'] as int;
   }
@@ -561,7 +646,7 @@ class DatabaseService {
     final db = await database;
     await db.update(
       'tags',
-      {'name': newName},
+      {'name': newName, 'dirty': 1},
       where: 'id = ?',
       whereArgs: [id],
     );
@@ -576,6 +661,7 @@ class DatabaseService {
       'paper_id': paperId,
       'tag_id': tagId,
     }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    await db.update('papers', {'dirty': 1, 'updated_at': DateTime.now().toIso8601String()}, where: 'id = ?', whereArgs: [paperId]);
   }
 
   /// Remove tag from paper
@@ -586,6 +672,7 @@ class DatabaseService {
       where: 'paper_id = ? AND tag_id = ?',
       whereArgs: [paperId, tagId],
     );
+    await db.update('papers', {'dirty': 1, 'updated_at': DateTime.now().toIso8601String()}, where: 'id = ?', whereArgs: [paperId]);
   }
 
   /// Set tags for a paper (replaces existing)
@@ -603,6 +690,9 @@ class DatabaseService {
       for (final tagId in tagIds) {
         await txn.insert('paper_tags', {'paper_id': paperId, 'tag_id': tagId});
       }
+
+      // Mark paper as dirty
+      await txn.update('papers', {'dirty': 1, 'updated_at': DateTime.now().toIso8601String()}, where: 'id = ?', whereArgs: [paperId]);
     });
   }
 

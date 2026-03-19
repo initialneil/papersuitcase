@@ -15,6 +15,11 @@ class Paper {
   final String? bibtex;
   final String bibStatus;
   final String? contentHash;
+  final String? syncKey;
+  final int? remoteId;
+  final DateTime? updatedAt;
+  final DateTime? deletedAt;
+  final bool dirty;
   List<Tag> tags;
 
   Paper({
@@ -31,6 +36,11 @@ class Paper {
     this.bibtex,
     this.bibStatus = 'none',
     this.contentHash,
+    this.syncKey,
+    this.remoteId,
+    this.updatedAt,
+    this.deletedAt,
+    this.dirty = true,
     List<Tag>? tags,
   }) : addedAt = addedAt ?? DateTime.now(),
        tags = tags ?? [];
@@ -75,6 +85,11 @@ class Paper {
       'bibtex': bibtex,
       'bib_status': bibStatus,
       'content_hash': contentHash,
+      if (syncKey != null) 'sync_key': syncKey,
+      if (remoteId != null) 'remote_id': remoteId,
+      if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),
+      if (deletedAt != null) 'deleted_at': deletedAt!.toIso8601String(),
+      'dirty': dirty ? 1 : 0,
     };
   }
 
@@ -93,6 +108,11 @@ class Paper {
       bibtex: map['bibtex'] as String?,
       bibStatus: map['bib_status'] as String? ?? 'none',
       contentHash: map['content_hash'] as String?,
+      syncKey: map['sync_key'] as String?,
+      remoteId: map['remote_id'] as int?,
+      updatedAt: map['updated_at'] != null ? DateTime.parse(map['updated_at'] as String) : null,
+      deletedAt: map['deleted_at'] != null ? DateTime.parse(map['deleted_at'] as String) : null,
+      dirty: map.containsKey('dirty') ? (map['dirty'] as int?) == 1 : true,
       tags: tags,
     );
   }
@@ -111,6 +131,11 @@ class Paper {
     String? bibtex,
     String? bibStatus,
     String? contentHash,
+    String? syncKey,
+    int? remoteId,
+    DateTime? updatedAt,
+    DateTime? deletedAt,
+    bool? dirty,
     List<Tag>? tags,
   }) {
     return Paper(
@@ -127,6 +152,11 @@ class Paper {
       bibtex: bibtex ?? this.bibtex,
       bibStatus: bibStatus ?? this.bibStatus,
       contentHash: contentHash ?? this.contentHash,
+      syncKey: syncKey ?? this.syncKey,
+      remoteId: remoteId ?? this.remoteId,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      dirty: dirty ?? this.dirty,
       tags: tags ?? this.tags,
     );
   }
