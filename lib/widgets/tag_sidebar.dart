@@ -272,7 +272,15 @@ class _SyncIndicator extends StatelessWidget {
               child: CircularProgressIndicator(strokeWidth: 2, color: muted),
             ),
             const SizedBox(width: 8),
-            Text('Syncing...', style: TextStyle(fontSize: 12, color: muted)),
+            Expanded(
+              child: Text(
+                appState.syncTotal > 0
+                    ? 'Syncing ${appState.syncCurrent}/${appState.syncTotal}...'
+                    : 'Syncing...',
+                style: TextStyle(fontSize: 12, color: muted),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
       );

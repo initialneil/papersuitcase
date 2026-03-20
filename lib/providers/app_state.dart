@@ -91,6 +91,9 @@ class AppState extends ChangeNotifier {
   bool _isSyncing = false;
   DateTime? _lastSyncedAt;
   String? _syncError;
+  String _syncProgress = '';
+  int _syncCurrent = 0;
+  int _syncTotal = 0;
 
   // Recommendation state
   final RecommendationService _recommendationService = RecommendationService();
@@ -132,6 +135,9 @@ class AppState extends ChangeNotifier {
   bool get isSyncing => _isSyncing;
   DateTime? get lastSyncedAt => _lastSyncedAt;
   String? get syncError => _syncError;
+  String get syncProgress => _syncProgress;
+  int get syncCurrent => _syncCurrent;
+  int get syncTotal => _syncTotal;
 
   // Recommendation Getters
   Recommendations get recommendations => _recommendations;
@@ -1114,7 +1120,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final result = await _syncService!.sync();
+      final result = await _syncService!.sync(
+        onProgress: (current, total, phase) {
+          _syncCurrent = current;
+          _syncTotal = total;
+          _syncProgress = total > 0 ? '$phase ($current/$total)' : phase;
+          notifyListeners();
+        },
+      );
       if (result.success) {
         _lastSyncedAt = DateTime.now();
         final prefs = await SharedPreferences.getInstance();

@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import '../database/database_service.dart';
 import '../models/paper.dart';
@@ -10,8 +12,8 @@ class SyncService {
 
   SyncService(this._db);
 
-  /// Run a full sync cycle.
-  Future<SyncResult> sync() async {
+  /// Run a full sync cycle. [onProgress] reports (current, total, phase).
+  Future<SyncResult> sync({void Function(int current, int total, String phase)? onProgress}) async {
     if (!SupabaseService.isLoggedIn) return SyncResult.notLoggedIn();
 
     final userId = SupabaseService.currentUser!.id;
@@ -20,9 +22,13 @@ class SyncService {
     int deletionsSynced = 0;
 
     try {
+      onProgress?.call(0, 0, 'Syncing tags...');
       tagsSynced = await _syncTags(userId);
-      papersSynced = await _syncPapers(userId);
+      onProgress?.call(0, 0, 'Syncing papers...');
+      papersSynced = await _syncPapers(userId, onProgress: onProgress);
+      onProgress?.call(0, 0, 'Syncing deletions...');
       deletionsSynced = await _syncDeletions(userId);
+      onProgress?.call(0, 0, 'Syncing tag associations...');
       await _syncPaperTagAssociations(userId);
 
       return SyncResult(
@@ -82,15 +88,17 @@ class SyncService {
     return count;
   }
 
-  Future<int> _syncPapers(String userId) async {
+  Future<int> _syncPapers(String userId, {void Function(int current, int total, String phase)? onProgress}) async {
     final dirtyPapers = await _db.getDirtyPapers();
     if (dirtyPapers.isEmpty) return 0;
 
     int count = 0;
+    final total = dirtyPapers.length;
     for (int i = 0; i < dirtyPapers.length; i += 50) {
       final batch = dirtyPapers.skip(i).take(50).toList();
 
       for (final paper in batch) {
+        onProgress?.call(count + 1, total, 'Syncing papers...');
         try {
           final tagNames = await _db.getTagNamesForPaper(paper.id!);
           final titleHash = paper.syncKey?.startsWith('title:') == true
@@ -190,10 +198,13 @@ class SyncService {
   }
 
   Future<void> _contributeToSharedCatalog(Paper paper, List<String> tagNames, String? titleHash) async {
+    // Always compute a title_hash fallback so the CHECK constraint is satisfied
+    final effectiveTitleHash = titleHash ?? _computeTitleHash(paper.title, paper.authors ?? '');
+
     try {
       await SupabaseService.client.rpc('upsert_shared_catalog', params: {
         'p_arxiv_id': paper.arxivId,
-        'p_title_hash': titleHash,
+        'p_title_hash': effectiveTitleHash,
         'p_title': paper.title,
         'p_authors': paper.authors,
         'p_abstract': paper.abstract,
@@ -202,6 +213,11 @@ class SyncService {
     } catch (e) {
       debugPrint('Shared catalog contribution failed: $e');
     }
+  }
+
+  String _computeTitleHash(String title, String authors) {
+    final input = '${title.toLowerCase()}${authors.toLowerCase()}';
+    return sha256.convert(utf8.encode(input)).toString();
   }
 
   /// Topological sort: parents before children.

@@ -155,6 +155,28 @@ class SettingsView extends StatelessWidget {
                             ],
                           ),
                         ),
+                        if (appState.isSyncing && appState.syncProgress.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  appState.syncProgress,
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                                if (appState.syncTotal > 0) ...[
+                                  const SizedBox(height: 4),
+                                  LinearProgressIndicator(
+                                    value: appState.syncCurrent / appState.syncTotal,
+                                  ),
+                                ],
+                                const SizedBox(height: 4),
+                              ],
+                            ),
+                          ),
                         const Divider(height: 1),
                         // Sign out
                         Padding(
