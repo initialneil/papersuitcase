@@ -55,34 +55,34 @@ class Recommendations {
 class RecommendationService {
   SupabaseClient get _client => Supabase.instance.client;
 
+  Future<List<RecommendedPaper>> _fetchSafe(String rpcName, String userId) async {
+    try {
+      final data = await _client.rpc(rpcName, params: {
+        'p_user_id': userId,
+        'p_limit': 20,
+      });
+      return (data as List)
+          .cast<Map<String, dynamic>>()
+          .map(RecommendedPaper.fromMap)
+          .toList();
+    } catch (e) {
+      debugPrint('$rpcName failed: $e');
+      return [];
+    }
+  }
+
   Future<Recommendations> fetchAll() async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) return Recommendations();
 
-    try {
-      final results = await Future.wait([
-        _client.rpc('get_collaborative_recommendations', params: {
-          'p_user_id': userId,
-          'p_limit': 20,
-        }).then((data) => (data as List).cast<Map<String, dynamic>>()),
-        _client.rpc('get_tag_recommendations', params: {
-          'p_user_id': userId,
-          'p_limit': 20,
-        }).then((data) => (data as List).cast<Map<String, dynamic>>()),
-        _client.rpc('get_trending_recommendations', params: {
-          'p_user_id': userId,
-          'p_limit': 20,
-        }).then((data) => (data as List).cast<Map<String, dynamic>>()),
-      ]);
+    final collaborative = await _fetchSafe('get_collaborative_recommendations', userId);
+    final tagBased = await _fetchSafe('get_tag_recommendations', userId);
+    final trending = await _fetchSafe('get_trending_recommendations', userId);
 
-      return Recommendations(
-        collaborative: results[0].map(RecommendedPaper.fromMap).toList(),
-        tagBased: results[1].map(RecommendedPaper.fromMap).toList(),
-        trending: results[2].map(RecommendedPaper.fromMap).toList(),
-      );
-    } catch (e) {
-      debugPrint('Failed to fetch recommendations: $e');
-      return Recommendations();
-    }
+    return Recommendations(
+      collaborative: collaborative,
+      tagBased: tagBased,
+      trending: trending,
+    );
   }
 }
