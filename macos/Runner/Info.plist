@@ -36,6 +36,8 @@
 	<false/>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
+	<key>SUPublicEDKey</key>
+	<string>PmwH/EHgJ4+zrKbOPmmUwunuelcNkKXky5MYTsTxHqc=</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
