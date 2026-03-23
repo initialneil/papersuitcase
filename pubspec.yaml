@@ -47,6 +47,7 @@ dependencies:
   # File picker for settings
   file_selector: ^1.0.3
   shared_preferences: ^2.2.2
+  package_info_plus: ^8.0.0
   html_unescape: ^2.0.0
   crypto: ^3.0.3
   supabase_flutter: ^2.8.0
