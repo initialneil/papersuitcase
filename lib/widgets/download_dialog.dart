@@ -15,6 +15,7 @@ import '../services/arxiv_service.dart';
 /// and duplicate detection.
 class DownloadDialog extends StatefulWidget {
   final String? arxivUrl;
+  final String? pdfUrl;
   final Entry? contextEntry;
   final String? contextSubfolder;
   final Tag? contextTag;
@@ -22,17 +23,21 @@ class DownloadDialog extends StatefulWidget {
   const DownloadDialog({
     super.key,
     this.arxivUrl,
+    this.pdfUrl,
     this.contextEntry,
     this.contextSubfolder,
     this.contextTag,
   });
 
-  static Future<void> show(BuildContext context, {String? arxivUrl}) {
+  bool get isDirectPdf => pdfUrl != null && arxivUrl == null;
+
+  static Future<void> show(BuildContext context, {String? arxivUrl, String? pdfUrl}) {
     final appState = context.read<AppState>();
     return showDialog(
       context: context,
       builder: (ctx) => DownloadDialog(
         arxivUrl: arxivUrl,
+        pdfUrl: pdfUrl,
         contextEntry: appState.selectedEntry,
         contextSubfolder: appState.selectedSubfolder,
         contextTag: appState.selectedTag,
@@ -164,6 +169,31 @@ class _DownloadDialogState extends State<DownloadDialog> {
   }
 
   Future<void> _fetchMetadata() async {
+    if (widget.isDirectPdf) {
+      // Direct PDF URL — derive title from filename
+      final uri = Uri.parse(widget.pdfUrl!);
+      var filename = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : 'paper';
+      if (filename.toLowerCase().endsWith('.pdf')) {
+        filename = filename.substring(0, filename.length - 4);
+      }
+      // Convert hyphens/underscores to spaces for a readable title
+      final title = filename
+          .replaceAll(RegExp(r'[-_]+'), ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+      setState(() {
+        _metadata = ArxivMetadata(
+          arxivId: '',
+          title: title.isNotEmpty ? title : 'Untitled',
+          authors: '',
+          abstract: '',
+          pdfUrl: widget.pdfUrl!,
+        );
+        _isFetchingMetadata = false;
+      });
+      return;
+    }
+
     final arxivId = ArxivService.parseArxivId(widget.arxivUrl ?? '');
     if (arxivId == null) {
       setState(() {
@@ -325,15 +355,23 @@ class _DownloadDialogState extends State<DownloadDialog> {
         await Directory(destDir).create(recursive: true);
       }
 
-      final response = await http.get(Uri.parse(_metadata!.pdfUrl));
-      if (response.statusCode != 200) {
-        throw Exception('Download failed with status ${response.statusCode}');
-      }
-
+      final pdfUrl = _metadata!.pdfUrl;
       final sanitizedTitle = _sanitizeFilename(_metadata!.title);
       final fileName = '$sanitizedTitle.pdf';
       final filePath = p.join(destDir, fileName);
-      await File(filePath).writeAsBytes(response.bodyBytes);
+
+      if (pdfUrl.startsWith('file://')) {
+        // Local file — copy it
+        final sourcePath = Uri.parse(pdfUrl).toFilePath();
+        await File(sourcePath).copy(filePath);
+      } else {
+        // Remote URL — download it
+        final response = await http.get(Uri.parse(pdfUrl));
+        if (response.statusCode != 200) {
+          throw Exception('Download failed with status ${response.statusCode}');
+        }
+        await File(filePath).writeAsBytes(response.bodyBytes);
+      }
 
       final relativePath = p.relative(filePath, from: _selectedEntry!.path);
 
@@ -343,12 +381,14 @@ class _DownloadDialogState extends State<DownloadDialog> {
         title: _metadata!.title,
         filePath: relativePath,
         entryId: _selectedEntry!.id!,
-        arxivId: _metadata!.arxivId,
-        authors: _metadata!.authors,
-        abstract: _metadata!.abstract,
-        arxivUrl: _metadata!.pdfUrl
-            .replaceAll('/pdf/', '/abs/')
-            .replaceAll('.pdf', ''),
+        arxivId: widget.isDirectPdf ? null : _metadata!.arxivId,
+        authors: _metadata!.authors.isNotEmpty ? _metadata!.authors : null,
+        abstract: _metadata!.abstract.isNotEmpty ? _metadata!.abstract : null,
+        arxivUrl: widget.isDirectPdf
+            ? null
+            : _metadata!.pdfUrl
+                .replaceAll('/pdf/', '/abs/')
+                .replaceAll('.pdf', ''),
       );
       final paperId = await db.insertPaper(paper);
 
@@ -389,7 +429,9 @@ class _DownloadDialogState extends State<DownloadDialog> {
     final hasSimilar = _similarPapers.isNotEmpty && _metadata != null;
 
     return AlertDialog(
-      title: const Text('Download from arXiv'),
+      title: Text(widget.isDirectPdf
+          ? (widget.pdfUrl?.startsWith('file://') == true ? 'Import PDF' : 'Download PDF')
+          : 'Download from arXiv'),
       content: SizedBox(
         width: hasSimilar ? 850 : 550,
         child: _isFetchingMetadata
@@ -444,7 +486,9 @@ class _DownloadDialogState extends State<DownloadDialog> {
                 )
               : Text(_similarPapers.isNotEmpty
                   ? 'Download Anyway'
-                  : 'Download'),
+                  : widget.pdfUrl?.startsWith('file://') == true
+                      ? 'Import'
+                      : 'Download'),
         ),
       ],
     );

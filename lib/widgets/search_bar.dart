@@ -14,7 +14,7 @@ class SearchBarWidget extends StatefulWidget {
   State<SearchBarWidget> createState() => _SearchBarWidgetState();
 }
 
-enum _DetectedUrlType { none, arxiv, doi }
+enum _DetectedUrlType { none, arxiv, doi, pdf }
 
 class _SearchBarWidgetState extends State<SearchBarWidget> {
   final TextEditingController _controller = TextEditingController();
@@ -24,6 +24,8 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
   static final _arxivPattern =
       RegExp(r'arxiv\.org/(abs|pdf)/(\d+\.\d+(v\d+)?)');
   static final _doiPattern = RegExp(r'doi\.org/10\.\S+');
+  static final _pdfUrlPattern =
+      RegExp(r'^(https?://|file://).+\.pdf(\?\S*)?$', caseSensitive: false);
 
   @override
   void dispose() {
@@ -38,6 +40,9 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
     }
     if (_doiPattern.hasMatch(value)) {
       return _DetectedUrlType.doi;
+    }
+    if (_pdfUrlPattern.hasMatch(value.trim())) {
+      return _DetectedUrlType.pdf;
     }
     return _DetectedUrlType.none;
   }
@@ -61,6 +66,8 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
     final text = _controller.text.trim();
     if (_detectedType == _DetectedUrlType.arxiv) {
       DownloadDialog.show(context, arxivUrl: text);
+    } else if (_detectedType == _DetectedUrlType.pdf) {
+      DownloadDialog.show(context, pdfUrl: text);
     } else if (_detectedType == _DetectedUrlType.doi) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -109,7 +116,7 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
                 child: TextField(
                   controller: _controller,
                   decoration: InputDecoration(
-                    hintText: 'Search papers or paste arXiv URL...',
+                    hintText: 'Search papers or paste arXiv/PDF URL...',
                     hintStyle: TextStyle(
                       color: Theme.of(
                         context,
@@ -142,7 +149,8 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
                 ),
 
               // Fetch button (shown when URL detected)
-              if (_detectedType == _DetectedUrlType.arxiv) ...[
+              if (_detectedType == _DetectedUrlType.arxiv ||
+                  _detectedType == _DetectedUrlType.pdf) ...[
                 Container(
                   height: 32,
                   margin: const EdgeInsets.only(right: 8),

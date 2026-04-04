@@ -375,6 +375,7 @@ class _PaperCardState extends State<PaperCard> {
         Offset.zero & overlay.size,
       ),
       items: <PopupMenuEntry<void>>[
+        // Open / Reveal
         PopupMenuItem(
           child: const Row(
             children: [
@@ -395,6 +396,10 @@ class _PaperCardState extends State<PaperCard> {
           ),
           onTap: () => appState.revealPaperInFinder(widget.paper),
         ),
+
+        const PopupMenuDivider(),
+
+        // Edit: tags + rename
         PopupMenuItem(
           child: const Row(
             children: [
@@ -411,6 +416,42 @@ class _PaperCardState extends State<PaperCard> {
             });
           },
         ),
+        PopupMenuItem(
+          child: const Row(
+            children: [
+              Icon(Icons.drive_file_rename_outline, size: 18),
+              SizedBox(width: 8),
+              Text('Rename'),
+            ],
+          ),
+          onTap: () {
+            Future.delayed(Duration.zero, () {
+              if (context.mounted) {
+                _showRenameDialog(context, appState);
+              }
+            });
+          },
+        ),
+        PopupMenuItem(
+          child: const Row(
+            children: [
+              Icon(Icons.auto_fix_high, size: 18),
+              SizedBox(width: 8),
+              Text('Auto rename from PDF'),
+            ],
+          ),
+          onTap: () async {
+            await appState.rebuildPaperTitle(widget.paper.id!);
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Title updated from PDF'),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+          },
+        ),
 
         // Assign Tags from persistent context
         if (appState.lastActiveTagPath.isNotEmpty) ...[
@@ -422,7 +463,10 @@ class _PaperCardState extends State<PaperCard> {
             child: _AssignTagsMenuItem(appState: appState),
           ),
         ],
+
         const PopupMenuDivider(),
+
+        // Destructive
         PopupMenuItem(
           child: Row(
             children: [
@@ -457,6 +501,44 @@ class _PaperCardState extends State<PaperCard> {
           },
         ),
       ],
+    );
+  }
+
+  void _showRenameDialog(BuildContext context, AppState appState) {
+    final controller = TextEditingController(text: widget.paper.title);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename Paper'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Title'),
+          onSubmitted: (value) async {
+            final newTitle = value.trim();
+            if (newTitle.isNotEmpty && newTitle != widget.paper.title) {
+              await appState.updatePaper(widget.paper.copyWith(title: newTitle));
+            }
+            if (ctx.mounted) Navigator.of(ctx).pop();
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final newTitle = controller.text.trim();
+              if (newTitle.isNotEmpty && newTitle != widget.paper.title) {
+                await appState.updatePaper(widget.paper.copyWith(title: newTitle));
+              }
+              if (ctx.mounted) Navigator.of(ctx).pop();
+            },
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
     );
   }
 
