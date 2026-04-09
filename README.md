@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://initialneil.github.io/papersuitcase-app/">Website</a>
+  <a href="https://initialneil.github.io/papersuitcase/">Website</a>
 </p>
 
 ![PaperSuitcase main interface](assets/screenshot-main.png)
