@@ -195,8 +195,16 @@ class _TitleBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      behavior: HitTestBehavior.translucent,
       onPanStart: (details) {
         windowManager.startDragging();
+      },
+      onDoubleTap: () async {
+        if (await windowManager.isMaximized()) {
+          await windowManager.unmaximize();
+        } else {
+          await windowManager.maximize();
+        }
       },
       child: Container(
         height: 38,
