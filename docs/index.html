@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Paper Suitcase — Your Research, Organized</title>
+  <meta name="description" content="A desktop app for managing academic PDF papers with hierarchical tagging, arXiv integration, and BibTeX export.">
+  <link rel="icon" type="image/png" href="assets/logo_sharp.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --teal: #4EB8A1;
+      --teal-deep: #3A9A86;
+      --teal-light: #E8F6F2;
+      --purple: #7B6BB5;
+      --purple-deep: #5E4FA2;
+      --cream: #F7F5F0;
+      --cream-warm: #F2EDE4;
+      --ink: #1A1A1A;
+      --ink-soft: #4A4A4A;
+      --ink-muted: #8A8A8A;
+      --white: #FFFFFF;
+      --shadow-soft: 0 4px 24px rgba(0,0,0,0.06);
+      --shadow-medium: 0 8px 40px rgba(0,0,0,0.10);
+      --shadow-heavy: 0 16px 64px rgba(0,0,0,0.14);
+      --radius: 16px;
+      --radius-sm: 10px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      font-family: 'Instrument Sans', sans-serif;
+      color: var(--ink);
+      background: var(--cream);
+      overflow-x: hidden;
+    }
+
+    /* ── Grain overlay ── */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+      background-repeat: repeat;
+      background-size: 200px;
+    }
+
+    /* ── Typography ── */
+    h1, h2, h3 {
+      font-family: 'DM Serif Display', serif;
+      font-weight: 400;
+      letter-spacing: -0.01em;
+    }
+
+    /* ── Nav ── */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      padding: 16px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      backdrop-filter: blur(20px) saturate(1.4);
+      -webkit-backdrop-filter: blur(20px) saturate(1.4);
+      background: rgba(247, 245, 240, 0.8);
+      border-bottom: 1px solid rgba(0,0,0,0.04);
+      transition: background 0.3s;
+    }
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--ink);
+    }
+
+    .nav-brand img {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+    }
+
+    .nav-brand span {
+      font-family: 'DM Serif Display', serif;
+      font-size: 1.2rem;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 32px;
+      align-items: center;
+      list-style: none;
+    }
+
+    .nav-links a {
+      text-decoration: none;
+      color: var(--ink-soft);
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover { color: var(--teal-deep); }
+
+    .nav-cta {
+      background: var(--ink);
+      color: var(--cream) !important;
+      padding: 10px 22px;
+      border-radius: 100px;
+      font-weight: 600 !important;
+      transition: transform 0.2s, box-shadow 0.2s !important;
+    }
+
+    .nav-cta:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    }
+
+    /* ── Hero ── */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 140px 24px 80px;
+      position: relative;
+    }
+
+    /* Decorative grid background */
+    .hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(78, 184, 161, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(78, 184, 161, 0.06) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 20%, transparent 70%);
+      -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 20%, transparent 70%);
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--white);
+      border: 1px solid rgba(78, 184, 161, 0.2);
+      padding: 8px 18px;
+      border-radius: 100px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--teal-deep);
+      margin-bottom: 32px;
+      box-shadow: var(--shadow-soft);
+      animation: fadeUp 0.8s ease both;
+    }
+
+    .hero-badge::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--teal);
+    }
+
+    .hero h1 {
+      font-size: clamp(3rem, 7vw, 5.5rem);
+      line-height: 1.05;
+      max-width: 800px;
+      margin-bottom: 24px;
+      animation: fadeUp 0.8s 0.1s ease both;
+    }
+
+    .hero h1 em {
+      font-style: italic;
+      color: var(--teal-deep);
+    }
+
+    .hero-sub {
+      font-size: clamp(1.05rem, 2vw, 1.25rem);
+      color: var(--ink-soft);
+      max-width: 540px;
+      line-height: 1.65;
+      margin-bottom: 40px;
+      animation: fadeUp 0.8s 0.2s ease both;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      justify-content: center;
+      animation: fadeUp 0.8s 0.3s ease both;
+    }
+
+    .btn-primary {
+      background: var(--teal-deep);
+      color: var(--white);
+      padding: 16px 36px;
+      border-radius: 100px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 1rem;
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 4px 20px rgba(58, 154, 134, 0.3);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(58, 154, 134, 0.4);
+    }
+
+    .btn-secondary {
+      background: var(--white);
+      color: var(--ink);
+      padding: 16px 36px;
+      border-radius: 100px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 1rem;
+      border: 1px solid rgba(0,0,0,0.1);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .btn-secondary:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-medium);
+    }
+
+    .hero-screenshot {
+      margin-top: 64px;
+      width: 100%;
+      max-width: 1000px;
+      animation: fadeUp 0.8s 0.4s ease both;
+    }
+
+    .hero-screenshot img {
+      width: 100%;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-heavy);
+      border: 1px solid rgba(0,0,0,0.06);
+    }
+
+    .hero-platforms {
+      margin-top: 24px;
+      font-size: 0.85rem;
+      color: var(--ink-muted);
+      animation: fadeUp 0.8s 0.5s ease both;
+    }
+
+    /* ── Features ── */
+    .features {
+      padding: 120px 24px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .features-header {
+      text-align: center;
+      margin-bottom: 80px;
+    }
+
+    .features-header h2 {
+      font-size: clamp(2rem, 4vw, 3.2rem);
+      margin-bottom: 16px;
+    }
+
+    .features-header p {
+      color: var(--ink-soft);
+      font-size: 1.1rem;
+      max-width: 500px;
+      margin: 0 auto;
+      line-height: 1.6;
+    }
+
+    .feature-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      align-items: center;
+      margin-bottom: 100px;
+    }
+
+    .feature-row.reverse { direction: rtl; }
+    .feature-row.reverse > * { direction: ltr; }
+
+    .feature-text { padding: 20px 0; }
+
+    .feature-label {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--teal-deep);
+      background: var(--teal-light);
+      padding: 6px 14px;
+      border-radius: 100px;
+      margin-bottom: 20px;
+    }
+
+    .feature-label.purple {
+      color: var(--purple-deep);
+      background: #EEEAFF;
+    }
+
+    .feature-text h3 {
+      font-size: clamp(1.6rem, 3vw, 2.2rem);
+      margin-bottom: 16px;
+      line-height: 1.2;
+    }
+
+    .feature-text p {
+      color: var(--ink-soft);
+      line-height: 1.7;
+      font-size: 1.05rem;
+    }
+
+    .feature-img {
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow-medium);
+      border: 1px solid rgba(0,0,0,0.06);
+      transition: transform 0.4s ease, box-shadow 0.4s ease;
+    }
+
+    .feature-img:hover {
+      transform: translateY(-4px) scale(1.01);
+      box-shadow: var(--shadow-heavy);
+    }
+
+    .feature-img img {
+      width: 100%;
+      display: block;
+    }
+
+    /* ── Sync Section ── */
+    .sync-section {
+      background: var(--white);
+      border-top: 1px solid rgba(0,0,0,0.05);
+      border-bottom: 1px solid rgba(0,0,0,0.05);
+      padding: 100px 24px;
+    }
+
+    .sync-inner {
+      max-width: 900px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .sync-inner h2 {
+      font-size: clamp(2rem, 4vw, 3rem);
+      margin-bottom: 20px;
+    }
+
+    .sync-inner > p {
+      color: var(--ink-soft);
+      font-size: 1.1rem;
+      line-height: 1.65;
+      max-width: 620px;
+      margin: 0 auto 48px;
+    }
+
+    .sync-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      text-align: left;
+    }
+
+    .sync-card {
+      background: var(--cream);
+      border-radius: var(--radius-sm);
+      padding: 32px 28px;
+      border: 1px solid rgba(0,0,0,0.04);
+      transition: transform 0.3s, box-shadow 0.3s;
+    }
+
+    .sync-card:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .sync-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      margin-bottom: 16px;
+    }
+
+    .sync-icon.teal { background: var(--teal-light); }
+    .sync-icon.purple { background: #EEEAFF; }
+    .sync-icon.warm { background: #FFF3E0; }
+
+    .sync-card h4 {
+      font-family: 'Instrument Sans', sans-serif;
+      font-weight: 700;
+      font-size: 1.05rem;
+      margin-bottom: 8px;
+    }
+
+    .sync-card p {
+      color: var(--ink-soft);
+      font-size: 0.92rem;
+      line-height: 1.6;
+    }
+
+    /* ── CTA ── */
+    .cta {
+      padding: 120px 24px;
+      text-align: center;
+      position: relative;
+    }
+
+    .cta::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 50% 50% at 50% 100%, rgba(78, 184, 161, 0.08), transparent);
+    }
+
+    .cta h2 {
+      font-size: clamp(2.2rem, 4.5vw, 3.5rem);
+      margin-bottom: 20px;
+      position: relative;
+    }
+
+    .cta p {
+      color: var(--ink-soft);
+      font-size: 1.1rem;
+      max-width: 480px;
+      margin: 0 auto 36px;
+      line-height: 1.6;
+      position: relative;
+    }
+
+    .cta .btn-primary { position: relative; }
+
+    /* ── Footer ── */
+    footer {
+      padding: 40px 40px;
+      border-top: 1px solid rgba(0,0,0,0.06);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      color: var(--ink-muted);
+    }
+
+    footer a {
+      color: var(--ink-soft);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    footer a:hover { color: var(--teal-deep); }
+
+    .footer-links {
+      display: flex;
+      gap: 24px;
+      align-items: center;
+    }
+
+    .hit-counter img {
+      height: 22px;
+      vertical-align: middle;
+    }
+
+    /* ── Animations ── */
+    @keyframes fadeUp {
+      from {
+        opacity: 0;
+        transform: translateY(24px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(32px);
+      transition: opacity 0.7s ease, transform 0.7s ease;
+    }
+
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      nav { padding: 12px 20px; }
+      .nav-links { display: none; }
+
+      .feature-row,
+      .feature-row.reverse {
+        grid-template-columns: 1fr;
+        direction: ltr;
+        gap: 24px;
+      }
+
+      .feature-row.reverse > * { direction: ltr; }
+      .feature-text { order: 1; }
+      .feature-img { order: 2; }
+
+      .sync-grid { grid-template-columns: 1fr; }
+
+      footer {
+        flex-direction: column;
+        gap: 16px;
+        text-align: center;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav>
+    <a href="#" class="nav-brand">
+      <img src="assets/logo_sharp.png" alt="Paper Suitcase">
+      <span>Paper Suitcase</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="#features">Features</a></li>
+      <li><a href="#sync">Workflow</a></li>
+      <li><a href="https://github.com/initialneil/papersuitcase/releases" class="nav-cta">Download</a></li>
+    </ul>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-badge">Free &amp; Open Source</div>
+    <h1>Your research papers,<br><em>finally organized</em></h1>
+    <p class="hero-sub">
+      Link your existing folders, paste arXiv URLs to download, tag papers by project, and export BibTeX for LaTeX&mdash;all from one calm, fast desktop app.
+    </p>
+    <div class="hero-actions">
+      <a href="https://github.com/initialneil/papersuitcase/releases" class="btn-primary">Download for macOS</a>
+      <a href="https://github.com/initialneil/papersuitcase" class="btn-secondary">View on GitHub</a>
+    </div>
+    <div class="hero-screenshot">
+      <img src="assets/screenshot-main.png" alt="Paper Suitcase main interface showing paper grid with thumbnails, entries sidebar, and tag organization">
+    </div>
+    <p class="hero-platforms">macOS &middot; Built with Flutter</p>
+  </section>
+
+  <!-- Features -->
+  <section class="features" id="features">
+    <div class="features-header reveal">
+      <h2>Built for researchers</h2>
+      <p>Every feature shaped around real academic workflows&mdash;no bloat, no learning curve.</p>
+    </div>
+
+    <!-- Feature 1: arXiv -->
+    <div class="feature-row reveal">
+      <div class="feature-text">
+        <div class="feature-label">arXiv Integration</div>
+        <h3>Paste a URL,<br>get the paper</h3>
+        <p>
+          Drop any arXiv link into the search bar. Paper Suitcase fetches the PDF, extracts metadata&mdash;title, authors, abstract&mdash;and files it into your chosen entry and subfolder. It even flags similar papers you already have.
+        </p>
+      </div>
+      <div class="feature-img">
+        <img src="assets/screenshot-download-arxiv.png" alt="arXiv download dialog showing metadata extraction and duplicate detection">
+      </div>
+    </div>
+
+    <!-- Feature 2: Tags -->
+    <div class="feature-row reverse reveal">
+      <div class="feature-text">
+        <div class="feature-label purple">Tagging System</div>
+        <h3>Tag papers<br>by project</h3>
+        <p>
+          Create hierarchical tags for each research project, reading group, or topic. Assign them in one click, filter your library instantly. Stop losing that one paper you read last month.
+        </p>
+      </div>
+      <div class="feature-img">
+        <img src="assets/screenshot-tag2.png" alt="Papers filtered by Final Project tag showing organized view">
+      </div>
+    </div>
+
+    <!-- Feature 3: BibTeX -->
+    <div class="feature-row reveal">
+      <div class="feature-text">
+        <div class="feature-label">BibTeX Export</div>
+        <h3>BibTeX ready<br>for Overleaf</h3>
+        <p>
+          Look up references from DBLP, generate BibTeX entries, and export them for your LaTeX projects. Manage citations per-tag so each project gets exactly the references it needs.
+        </p>
+      </div>
+      <div class="feature-img">
+        <img src="assets/screenshot-bibtex.png" alt="BibTeX manager showing DBLP lookup and citation export">
+      </div>
+    </div>
+  </section>
+
+  <!-- Sync / Entries -->
+  <section class="sync-section" id="sync">
+    <div class="sync-inner">
+      <h2 class="reveal">Your folders, your rules</h2>
+      <p class="reveal">
+        Paper Suitcase never copies or moves your files. Create <strong>entries</strong> that link to folders on your disk&mdash;the same folders synced by your cloud provider.
+      </p>
+      <div class="sync-grid">
+        <div class="sync-card reveal">
+          <div class="sync-icon teal">
+            <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--teal-deep)"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          </div>
+          <h4>Link, don't copy</h4>
+          <p>Add any folder as an entry. PDFs stay exactly where they are&mdash;your existing file structure is preserved.</p>
+        </div>
+        <div class="sync-card reveal">
+          <div class="sync-icon purple">
+            <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--purple-deep)"><path d="M21 12a9 9 0 1 1-9-9c2.5 0 4.8 1 6.5 2.6"/><path d="M21 3v6h-6"/></svg>
+          </div>
+          <h4>Cloud-sync friendly</h4>
+          <p>Works with OneDrive, Dropbox, Nutstore, Google Drive&mdash;any service that syncs a folder. Your papers follow you across machines.</p>
+        </div>
+        <div class="sync-card reveal">
+          <div class="sync-icon warm">
+            <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#E67E22"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          </div>
+          <h4>Auto-scan on launch</h4>
+          <p>New PDFs dropped into your synced folder? Paper Suitcase detects additions, removals, and even renames automatically.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta">
+    <h2 class="reveal">Less managing,<br>more reading</h2>
+    <p class="reveal">Free, open-source, and built for academics who just want their papers in one place.</p>
+    <a href="https://github.com/initialneil/papersuitcase/releases" class="btn-primary reveal">Download Paper Suitcase</a>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <span>&copy; 2025 Paper Suitcase</span>
+    <div class="footer-links">
+      <a href="https://github.com/initialneil/papersuitcase">GitHub</a>
+      <a href="https://github.com/initialneil/papersuitcase/issues">Feedback</a>
+      <a href="https://hitscounter.dev" class="hit-counter" target="_blank" rel="noopener">
+        <img src="https://hitscounter.dev/api/hit?url=https%3A%2F%2Finitialneil.github.io%2Fpapersuitcase&label=visitors&icon=eye&color=%234EB8A1" alt="Visitors">
+      </a>
+    </div>
+  </footer>
+
+  <script>
+    // Reveal on scroll
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+  </script>
+
+</body>
+</html>
