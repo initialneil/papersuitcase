@@ -6,29 +6,25 @@
     <description>Paper Suitcase release feed</description>
     <language>en</language>
     <item>
-      <title>Version 1.1.3</title>
-      <pubDate>Thu, 09 Apr 2026 13:46:00 +0800</pubDate>
-      <sparkle:version>5</sparkle:version>
-      <sparkle:shortVersionString>1.1.3</sparkle:shortVersionString>
+      <title>Version 1.1.4</title>
+      <pubDate>Mon, 11 May 2026 15:48:00 +0800</pubDate>
+      <sparkle:version>6</sparkle:version>
+      <sparkle:shortVersionString>1.1.4</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
       <description><![CDATA[
-        <h2>v1.1.3 — Quality of Life</h2>
+        <h2>v1.1.4 — Nested Entry Folders</h2>
         <ul>
-          <li>Double-click the title bar to maximize/restore the window</li>
-          <li>Renamed "suitecase" → "suitcase" throughout the app</li>
-          <li>Direct PDF URL import — paste any HTTP or local file:// PDF URL</li>
-          <li>Right-click rename and auto-rename from PDF</li>
-          <li>Cmd+W to close window</li>
-          <li>Reorganized context menus with logical groupings</li>
-          <li>Fix DropdownButton crash and tag recommendations type cast</li>
+          <li>Entry sidebar now renders the full nested folder tree — previously only the top-level subfolder showed, and deeper PDFs were lumped under it</li>
+          <li>Each subfolder has its own expand/collapse chevron and remembers state across rebuilds</li>
+          <li>Counts on each node now reflect all PDFs in that subtree</li>
+          <li>Subfolder filter no longer matches sibling folders by accident (e.g. "Avatar" no longer matches "AvatarStudio/…")</li>
         </ul>
-        <p><strong>Note:</strong> Local data paths changed (paper_suitcase.db, .papersuitcase/). If migrating manually, rename your existing data folders.</p>
       ]]></description>
       <enclosure
-        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.3/PaperSuitcase-macOS-v1.1.3.zip"
-        length="26491394"
+        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.4/PaperSuitcase-macOS-v1.1.4.zip"
+        length="26503160"
         type="application/octet-stream"
-        sparkle:edSignature="Fs9hed3roww4AdG3n7G3NntrB9je5z2s575Uhneaz9wYY3xe6l1wUqnELuC1Bl18AQd9m4MqLM838NlhZ8VUAA=="
+        sparkle:edSignature="ZDBZYwUqWhxwRXqtdxnHJ5or1nOYQ+cwqQ1Q/Y31LmEtvmjF7iMTOO883nRPwOp9sJtpE5FXrwQ2DEYBXIMmCw=="
       />
     </item>
     <item>

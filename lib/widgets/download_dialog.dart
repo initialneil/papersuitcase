@@ -143,10 +143,14 @@ class _DownloadDialogState extends State<DownloadDialog> {
       }
     }
     if (_selectedEntry != null) {
-      for (final key in _selectedEntry!.subfolderCounts.keys) {
-        subfolders[key] = (subfolders[key] ?? 0) +
-            _selectedEntry!.subfolderCounts[key]!;
+      void walk(List<SubfolderNode> nodes) {
+        for (final n in nodes) {
+          subfolders[n.relativePath] =
+              (subfolders[n.relativePath] ?? 0) + n.totalCount;
+          walk(n.children);
+        }
       }
+      walk(_selectedEntry!.subfolderTree);
     }
     final sorted = subfolders.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));

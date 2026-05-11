@@ -310,9 +310,14 @@ class AppState extends ChangeNotifier {
     } else if (_selectedTag != null) {
       _papers = await _db.getPapersByTag(_selectedTag!.id!);
     } else if (_selectedEntry != null && _selectedSubfolder != null) {
+      // Append separator so prefix matches a folder boundary
+      // (avoid 'Avatar' matching 'AvatarStudio/...').
+      final prefix = _selectedSubfolder!.endsWith('/')
+          ? _selectedSubfolder!
+          : '${_selectedSubfolder!}/';
       _papers = await _db.getPapersByEntryAndSubfolder(
         _selectedEntry!.id!,
-        _selectedSubfolder!,
+        prefix,
       );
     } else if (_selectedEntry != null) {
       _papers = await _db.getPapersByEntry(_selectedEntry!.id!);
@@ -350,39 +355,106 @@ class AppState extends ChangeNotifier {
 
   Future<void> _loadEntries() async {
     // Preserve expansion state across reloads
-    final oldExpanded = {for (final e in _entries) if (e.isExpanded) e.id: true};
+    final oldEntryExpanded = {
+      for (final e in _entries)
+        if (e.isExpanded) e.id: true,
+    };
+    // Preserve subfolder-node expansion keyed by (entryId, relativePath)
+    final oldSubExpanded = <String>{};
+    void collectSub(int? entryId, List<SubfolderNode> nodes) {
+      if (entryId == null) return;
+      for (final n in nodes) {
+        if (n.isExpanded) oldSubExpanded.add('$entryId:${n.relativePath}');
+        collectSub(entryId, n.children);
+      }
+    }
+    for (final e in _entries) {
+      collectSub(e.id, e.subfolderTree);
+    }
 
     _entries = await _db.getAllEntries();
 
-    // Restore expansion state
+    // Restore expansion state for entries
     for (final entry in _entries) {
-      if (oldExpanded.containsKey(entry.id)) {
+      if (oldEntryExpanded.containsKey(entry.id)) {
         entry.isExpanded = true;
       }
     }
 
-    // Update paper counts and subfolder counts
+    // Update paper counts and build subfolder trees
     final counts = await _db.getEntryPaperCounts();
     for (final entry in _entries) {
       entry.paperCount = counts[entry.id] ?? 0;
+      if (entry.id == null) continue;
 
-      // Compute subfolder counts from papers
-      if (entry.id != null) {
-        final entryPapers = await _db.getPapersByEntry(entry.id!);
-        final subCounts = <String, int>{};
-        for (final paper in entryPapers) {
-          final dir = p.dirname(paper.filePath);
-          if (dir != '.' && dir.isNotEmpty) {
-            // Get top-level subfolder
-            final parts = p.split(dir);
-            if (parts.isNotEmpty) {
-              final topFolder = parts.first;
-              subCounts[topFolder] = (subCounts[topFolder] ?? 0) + 1;
-            }
+      final entryPapers = await _db.getPapersByEntry(entry.id!);
+      entry.subfolderTree = _buildSubfolderTree(entryPapers, entry.id!, oldSubExpanded);
+    }
+  }
+
+  /// Build a nested tree of subfolders from a list of papers in an entry.
+  /// Path segments are split on '/' (paper.filePath uses forward slashes).
+  /// Each node's totalCount counts all PDFs at-or-below that node.
+  List<SubfolderNode> _buildSubfolderTree(
+    List<Paper> entryPapers,
+    int entryId,
+    Set<String> oldExpanded,
+  ) {
+    // Path -> node, for fast lookup at any depth.
+    final byPath = <String, SubfolderNode>{};
+    final roots = <SubfolderNode>[];
+
+    for (final paper in entryPapers) {
+      final dir = p.dirname(paper.filePath);
+      if (dir == '.' || dir.isEmpty) continue;
+
+      final segments = p
+          .split(dir)
+          .where((s) => s.isNotEmpty && s != '.')
+          .toList();
+      if (segments.isEmpty) continue;
+
+      var accumulatedPath = '';
+      SubfolderNode? parent;
+      for (var i = 0; i < segments.length; i++) {
+        final segment = segments[i];
+        accumulatedPath =
+            accumulatedPath.isEmpty ? segment : '$accumulatedPath/$segment';
+
+        var node = byPath[accumulatedPath];
+        if (node == null) {
+          node = SubfolderNode(
+            name: segment,
+            relativePath: accumulatedPath,
+            isExpanded: oldExpanded.contains('$entryId:$accumulatedPath'),
+          );
+          byPath[accumulatedPath] = node;
+          if (parent == null) {
+            roots.add(node);
+          } else {
+            parent.children.add(node);
           }
         }
-        entry.subfolderCounts = subCounts;
+
+        node.totalCount++;
+        if (i == segments.length - 1) {
+          node.directCount++;
+        }
+        parent = node;
       }
+    }
+
+    roots.sort((a, b) => a.name.compareTo(b.name));
+    for (final r in roots) {
+      _sortTree(r);
+    }
+    return roots;
+  }
+
+  void _sortTree(SubfolderNode node) {
+    node.children.sort((a, b) => a.name.compareTo(b.name));
+    for (final c in node.children) {
+      _sortTree(c);
     }
   }
 
@@ -694,6 +766,12 @@ class AppState extends ChangeNotifier {
   /// Toggle entry expansion in sidebar
   void toggleEntryExpansion(Entry entry) {
     entry.isExpanded = !entry.isExpanded;
+    notifyListeners();
+  }
+
+  /// Toggle a subfolder node expansion in the entry sidebar tree.
+  void toggleSubfolderExpansion(SubfolderNode node) {
+    node.isExpanded = !node.isExpanded;
     notifyListeners();
   }
 

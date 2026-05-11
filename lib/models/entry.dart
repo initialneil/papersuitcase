@@ -8,7 +8,7 @@ class Entry {
   bool isExpanded; // Runtime UI state
   bool isAccessible; // False if folder missing on disk
   int paperCount;
-  Map<String, int> subfolderCounts; // relativePath -> count
+  List<SubfolderNode> subfolderTree; // Top-level subfolder nodes
 
   Entry({
     this.id,
@@ -18,9 +18,9 @@ class Entry {
     this.isExpanded = false,
     this.isAccessible = true,
     this.paperCount = 0,
-    Map<String, int>? subfolderCounts,
+    List<SubfolderNode>? subfolderTree,
   })  : addedAt = addedAt ?? DateTime.now(),
-        subfolderCounts = subfolderCounts ?? {};
+        subfolderTree = subfolderTree ?? [];
 
   Map<String, dynamic> toMap() {
     return {
@@ -47,4 +47,30 @@ class Entry {
 
   @override
   int get hashCode => id.hashCode;
+}
+
+/// A node in an entry's subfolder tree.
+///
+/// `relativePath` is the full path from the entry root, using forward slashes
+/// (e.g. "Avatar/HeadAvatar"). `totalCount` includes all PDFs at this node's
+/// path or any descendant; `directCount` only counts PDFs whose parent dir is
+/// exactly this node.
+class SubfolderNode {
+  final String name;
+  final String relativePath;
+  int directCount;
+  int totalCount;
+  bool isExpanded;
+  final List<SubfolderNode> children;
+
+  SubfolderNode({
+    required this.name,
+    required this.relativePath,
+    this.directCount = 0,
+    this.totalCount = 0,
+    this.isExpanded = false,
+    List<SubfolderNode>? children,
+  }) : children = children ?? [];
+
+  bool get hasChildren => children.isNotEmpty;
 }

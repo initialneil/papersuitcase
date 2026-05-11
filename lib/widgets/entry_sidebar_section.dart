@@ -111,7 +111,7 @@ class _EntryTreeItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final appState = context.read<AppState>();
-    final hasSubfolders = entry.subfolderCounts.isNotEmpty;
+    final hasSubfolders = entry.subfolderTree.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -252,104 +252,17 @@ class _EntryTreeItem extends StatelessWidget {
 
         // Subfolder children (when expanded)
         if (entry.isExpanded && hasSubfolders)
-          ..._buildSubfolderItems(context, appState),
-      ],
-    );
-  }
-
-  List<Widget> _buildSubfolderItems(BuildContext context, AppState appState) {
-    final sortedSubfolders = entry.subfolderCounts.entries.toList()
-      ..sort((a, b) => a.key.compareTo(b.key));
-
-    return sortedSubfolders.map((subfolder) {
-      final isSubfolderSelected = selectedEntry?.id == entry.id &&
-          selectedSubfolder == subfolder.key;
-
-      return Material(
-        color: isSubfolderSelected
-            ? Theme.of(context)
-                .colorScheme
-                .primaryContainer
-                .withValues(alpha: 0.3)
-            : Colors.transparent,
-        child: InkWell(
-          onTap: () =>
-              appState.selectEntry(entry, subfolder: subfolder.key),
-          child: Padding(
-            padding: const EdgeInsets.only(
-              left: 48, // indent for subfolder
-              right: 8,
-              top: 6,
-              bottom: 6,
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.subdirectory_arrow_right,
-                  size: 14,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.4),
-                ),
-                const SizedBox(width: 6),
-                Icon(
-                  Icons.folder_outlined,
-                  size: 16,
-                  color: isSubfolderSelected
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.6),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    subfolder.key,
-                    style: TextStyle(
-                      fontWeight: isSubfolderSelected
-                          ? FontWeight.bold
-                          : FontWeight.normal,
-                      fontSize: 12,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (subfolder.value > 0)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 1,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isSubfolderSelected
-                          ? Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .withValues(alpha: 0.2)
-                          : Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '${subfolder.value}',
-                      style:
-                          Theme.of(context).textTheme.labelSmall?.copyWith(
-                        fontSize: 10,
-                        color: isSubfolderSelected
-                            ? Theme.of(context).colorScheme.primary
-                            : null,
-                      ),
-                    ),
-                  ),
-              ],
+          ...entry.subfolderTree.map(
+            (node) => _SubfolderTreeItem(
+              entry: entry,
+              node: node,
+              depth: 0,
+              selectedEntry: selectedEntry,
+              selectedSubfolder: selectedSubfolder,
             ),
           ),
-        ),
-      );
-    }).toList();
+      ],
+    );
   }
 
   void _showContextMenu(
@@ -448,6 +361,162 @@ class _EntryTreeItem extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Recursive subfolder node row. Indents by depth and expands its own children.
+class _SubfolderTreeItem extends StatelessWidget {
+  final Entry entry;
+  final SubfolderNode node;
+  final int depth;
+  final Entry? selectedEntry;
+  final String? selectedSubfolder;
+
+  const _SubfolderTreeItem({
+    required this.entry,
+    required this.node,
+    required this.depth,
+    required this.selectedEntry,
+    required this.selectedSubfolder,
+  });
+
+  bool get isSelected =>
+      selectedEntry?.id == entry.id &&
+      selectedSubfolder == node.relativePath;
+
+  @override
+  Widget build(BuildContext context) {
+    final appState = context.read<AppState>();
+    final hasChildren = node.hasChildren;
+
+    // Base indent matches the original subfolder row (48), then add 16 per depth level.
+    final leftPad = 32.0 + (depth * 16.0);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Material(
+          color: isSelected
+              ? Theme.of(context)
+                  .colorScheme
+                  .primaryContainer
+                  .withValues(alpha: 0.3)
+              : Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              if (hasChildren) {
+                if (isSelected && node.isExpanded) {
+                  appState.toggleSubfolderExpansion(node);
+                } else {
+                  appState.selectEntry(entry, subfolder: node.relativePath);
+                  if (!node.isExpanded) {
+                    appState.toggleSubfolderExpansion(node);
+                  }
+                }
+              } else {
+                appState.selectEntry(entry, subfolder: node.relativePath);
+              }
+            },
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: leftPad,
+                right: 8,
+                top: 6,
+                bottom: 6,
+              ),
+              child: Row(
+                children: [
+                  // Expand/collapse chevron (or spacer for alignment)
+                  if (hasChildren)
+                    InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => appState.toggleSubfolderExpansion(node),
+                      child: Padding(
+                        padding: const EdgeInsets.all(2),
+                        child: Icon(
+                          node.isExpanded
+                              ? Icons.expand_more
+                              : Icons.chevron_right,
+                          size: 16,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.5),
+                        ),
+                      ),
+                    )
+                  else
+                    const SizedBox(width: 20),
+
+                  Icon(
+                    Icons.folder_outlined,
+                    size: 14,
+                    color: isSelected
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.6),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      node.name,
+                      style: TextStyle(
+                        fontWeight: isSelected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                        fontSize: 12,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (node.totalCount > 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: 0.2)
+                            : Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${node.totalCount}',
+                        style:
+                            Theme.of(context).textTheme.labelSmall?.copyWith(
+                          fontSize: 10,
+                          color: isSelected
+                              ? Theme.of(context).colorScheme.primary
+                              : null,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+
+        if (node.isExpanded && hasChildren)
+          ...node.children.map(
+            (child) => _SubfolderTreeItem(
+              entry: entry,
+              node: child,
+              depth: depth + 1,
+              selectedEntry: selectedEntry,
+              selectedSubfolder: selectedSubfolder,
+            ),
+          ),
+      ],
     );
   }
 }
