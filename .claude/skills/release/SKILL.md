@@ -1,6 +1,6 @@
 ---
 name: release
-description: Build, package, and release PaperSuitcase to GitHub Releases. Bumps version, creates DMG+ZIP, signs with Sparkle, uploads assets, updates appcast. Supports patch (replace), minor, and major releases.
+description: Build, package, and release PaperSuitcase to GitHub Releases for macOS and Windows. Bumps version, creates DMG+ZIP (Mac, local) and NSIS installer (Windows, via GitHub Actions), signs Mac ZIP with Sparkle, uploads assets, updates shared appcast for Sparkle+WinSparkle. Supports patch (replace), minor, and major releases.
 user_invocable: true
 ---
 
@@ -16,9 +16,10 @@ Single monorepo `initialneil/papersuitcase`. Flutter source at the root, website
 
 ## Tools
 
-- `sign_update` for Sparkle EdDSA signing — vendored in `macos/Pods/Sparkle/bin/sign_update`
-- `create-dmg` (homebrew)
-- `gh` CLI
+- `sign_update` for Sparkle EdDSA signing (Mac) — vendored in `macos/Pods/Sparkle/bin/sign_update`
+- `create-dmg` (homebrew) — Mac DMG packaging
+- `gh` CLI — release management and workflow watching
+- GitHub Actions runs the Windows build via `.github/workflows/release-windows.yml` (triggered by the tag push in step 10). The skill waits for it via `gh run watch`. No Windows machine is required locally.
 
 ## Arguments
 
@@ -103,26 +104,34 @@ Summarize into release notes with sections like "New Features", "Fixes", "Change
 
 ```markdown
 ### Installation
+
+**macOS:**
 1. Download `PaperSuitcase-macOS-vX.Y.Z.dmg`
 2. Open the DMG and drag Paper Suitcase to Applications
 3. On first launch, right-click the app → **Open** (required for unsigned apps)
 
+**Windows:**
+1. Download `PaperSuitcase-Windows-vX.Y.Z-Setup.exe`
+2. Run the installer (click "More info → Run anyway" if SmartScreen warns — installer is unsigned)
+3. Launch Paper Suitcase from the Start Menu
+
 ### Requirements
-- macOS 12+
+- macOS 12+ or Windows 10+
 ```
 
 ### 8. Update the appcast in docs/
 
-Edit `docs/appcast.xml`.
+Edit `docs/appcast.xml`. Each release writes TWO `<item>` entries — one for macOS, one for Windows. The Windows item's URL is templated from the known filename pattern; CI uploads the actual installer later in step 10.
 
-- **Patch releases**: REPLACE the existing top `<item>` (the most recent patch in the same minor series). Do not accumulate multiple patches of the same minor.
-- **Minor/major releases**: PREPEND a new `<item>` at the top of the channel, keeping older items below.
+- **Patch releases**: REPLACE the existing top pair of `<item>` entries (both Mac + Windows of the most recent patch in the same minor series). Do not accumulate multiple patches of the same minor.
+- **Minor/major releases**: PREPEND a new pair at the top of the channel, keeping older items below.
 
-Template (substitute VERSION, BUILD_NUMBER, PUB_DATE, NOTES_HTML, LENGTH, SIGNATURE):
+**macOS item template** (signature/length come from step 6):
 
 ```xml
     <item>
-      <title>Version VERSION</title>
+      <title>Version VERSION (macOS)</title>
+      <sparkle:os>macos</sparkle:os>
       <pubDate>PUB_DATE</pubDate>
       <sparkle:version>BUILD_NUMBER</sparkle:version>
       <sparkle:shortVersionString>VERSION</sparkle:shortVersionString>
@@ -140,16 +149,43 @@ Template (substitute VERSION, BUILD_NUMBER, PUB_DATE, NOTES_HTML, LENGTH, SIGNAT
     </item>
 ```
 
+**Windows item template** (no length, no signature for v1 — WinSparkle treats as unsigned):
+
+```xml
+    <item>
+      <title>Version VERSION (Windows)</title>
+      <sparkle:os>windows</sparkle:os>
+      <pubDate>PUB_DATE</pubDate>
+      <sparkle:version>BUILD_NUMBER</sparkle:version>
+      <sparkle:shortVersionString>VERSION</sparkle:shortVersionString>
+      <description><![CDATA[
+        <h2>vVERSION</h2>
+        NOTES_HTML
+      ]]></description>
+      <enclosure
+        url="https://github.com/initialneil/papersuitcase/releases/download/vVERSION/PaperSuitcase-Windows-vVERSION-Setup.exe"
+        type="application/octet-stream"
+      />
+    </item>
+```
+
 - `BUILD_NUMBER` is the build number from `pubspec.yaml` (the part after `+`).
-- `PUB_DATE` is RFC 822 format (e.g. `Thu, 09 Apr 2026 13:46:00 +0800`).
-- `NOTES_HTML` is a short HTML version of the release notes (a `<ul>` of bullet points works well — match the tone of existing entries).
-- `LENGTH` and `SIGNATURE` come from step 6.
+- `PUB_DATE` is RFC 822 format (e.g. `Thu, 09 Apr 2026 13:46:00 +0800`) — same value for both items.
+- `NOTES_HTML` is a short HTML version of the release notes — same value for both items.
+- `LENGTH` and `SIGNATURE` (Mac only) come from step 6.
+- The Windows URL is templated from the known filename pattern; no signature is included for v1.
+
+After editing, validate the XML:
+
+```bash
+xmllint --noout docs/appcast.xml
+```
 
 ### 9. Commit
 
 Stage `pubspec.yaml`, `docs/appcast.xml`, and any other changes that are part of this release. Commit with a meaningful message describing what's in the release. The Pages workflow auto-deploys the new appcast when `docs/` is pushed.
 
-### 10. Tag and release
+### 10. Tag and release (and wait for Windows CI)
 
 **Patch releases** (replace existing minor release):
 1. Find the existing tag matching `vMAJOR.MINOR.*` using `gh release list`
@@ -171,7 +207,9 @@ git push origin "v${VERSION}"
 git push origin HEAD
 ```
 
-Create the release with assets:
+**The tag push above triggers `.github/workflows/release-windows.yml`** on GitHub Actions. The workflow builds the Windows installer and uploads it to the release we're about to create.
+
+Create the release with Mac assets:
 ```bash
 gh release create "v${VERSION}" \
   --title "Paper Suitcase v${VERSION}" \
@@ -179,6 +217,27 @@ gh release create "v${VERSION}" \
   "PaperSuitcase-macOS-v${VERSION}.dmg" \
   "PaperSuitcase-macOS-v${VERSION}.zip"
 ```
+
+Wait for the Windows workflow to finish and upload its installer:
+```bash
+sleep 5  # give GitHub a moment to register the workflow run
+RUN_ID=$(gh run list --workflow=release-windows.yml --branch="v${VERSION}" --limit=1 --json databaseId -q '.[0].databaseId')
+gh run watch "$RUN_ID" --exit-status
+```
+
+If `gh run watch` exits non-zero, the Windows build failed. The Mac release is already published with Mac-only assets. Inspect logs (`gh run view "$RUN_ID" --log-failed`), fix the issue on a branch, and re-trigger the workflow against the same tag:
+```bash
+gh workflow run release-windows.yml -r "v${VERSION}"
+```
+
+Verify both assets are now attached to the release:
+```bash
+gh release view "v${VERSION}" --json assets -q '.assets[].name'
+```
+Expected output should include:
+- `PaperSuitcase-macOS-v${VERSION}.dmg`
+- `PaperSuitcase-macOS-v${VERSION}.zip`
+- `PaperSuitcase-Windows-v${VERSION}-Setup.exe`
 
 ### 11. Clean up and report
 
@@ -188,4 +247,5 @@ rm "PaperSuitcase-macOS-v${VERSION}.dmg" "PaperSuitcase-macOS-v${VERSION}.zip"
 
 Report to the user:
 - Release URL: `https://github.com/initialneil/papersuitcase/releases/tag/v${VERSION}`
-- Note that the Pages workflow will auto-deploy the updated appcast in a minute or two, so existing installs will see the update via Sparkle.
+- Mac users: Sparkle picks up the new appcast within ~1–2 min of the Pages workflow finishing.
+- Windows users: WinSparkle checks for updates on the next app launch (or per its 24h check schedule).
