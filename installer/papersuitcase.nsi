@@ -24,8 +24,8 @@ ShowUninstDetails show
 
 !include "MUI2.nsh"
 
-!define MUI_ICON "${BUILD_DIR}\${APP_EXE}"
-!define MUI_UNICON "${BUILD_DIR}\${APP_EXE}"
+!define MUI_ICON   "..\windows\runner\resources\app_icon.ico"
+!define MUI_UNICON "..\windows\runner\resources\app_icon.ico"
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
