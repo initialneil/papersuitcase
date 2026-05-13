@@ -49,6 +49,38 @@ endfunction()
 set(FLUTTER_MANAGED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/flutter")
 add_subdirectory(${FLUTTER_MANAGED_DIR})
 
+# ---- WinSparkle (auto-update) ----
+# Downloaded via FetchContent and linked into the runner. The zip may extract
+# with or without a WinSparkle-0.8.1/ wrapper directory depending on CMake
+# version — handle both layouts. Declared BEFORE add_subdirectory("runner") so
+# the cache variables below are visible when runner/CMakeLists.txt is processed.
+include(FetchContent)
+FetchContent_Declare(
+  winsparkle
+  URL https://github.com/vslavik/winsparkle/releases/download/v0.8.1/WinSparkle-0.8.1.zip
+  URL_HASH SHA256=491612b0e817373ffcde03ad0d923f1e1885a231316e9e9c257e57b4e9dab4c5
+)
+FetchContent_MakeAvailable(winsparkle)
+
+if(EXISTS "${winsparkle_SOURCE_DIR}/include/winsparkle.h")
+  set(_ws_root "${winsparkle_SOURCE_DIR}")
+else()
+  file(GLOB _ws_subdirs LIST_DIRECTORIES true "${winsparkle_SOURCE_DIR}/WinSparkle-*")
+  list(LENGTH _ws_subdirs _ws_count)
+  if(_ws_count EQUAL 0)
+    message(FATAL_ERROR "WinSparkle: cannot find include/winsparkle.h under ${winsparkle_SOURCE_DIR}")
+  endif()
+  list(GET _ws_subdirs 0 _ws_root)
+endif()
+
+set(WINSPARKLE_INCLUDE_DIR "${_ws_root}/include" CACHE INTERNAL "WinSparkle include dir")
+set(WINSPARKLE_LIB         "${_ws_root}/x64/Release/WinSparkle.lib" CACHE INTERNAL "WinSparkle import lib")
+set(WINSPARKLE_DLL         "${_ws_root}/x64/Release/WinSparkle.dll" CACHE INTERNAL "WinSparkle runtime DLL")
+
+message(STATUS "WinSparkle root: ${_ws_root}")
+message(STATUS "WinSparkle include: ${WINSPARKLE_INCLUDE_DIR}")
+message(STATUS "WinSparkle lib:     ${WINSPARKLE_LIB}")
+
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
