@@ -7,6 +7,7 @@
     <language>en</language>
     <item>
       <title>Version 1.1.4</title>
+      <sparkle:os>macos</sparkle:os>
       <pubDate>Mon, 11 May 2026 15:48:00 +0800</pubDate>
       <sparkle:version>6</sparkle:version>
       <sparkle:shortVersionString>1.1.4</sparkle:shortVersionString>
@@ -29,6 +30,7 @@
     </item>
     <item>
       <title>Version 1.1.0</title>
+      <sparkle:os>macos</sparkle:os>
       <pubDate>Mon, 24 Mar 2026 00:00:00 +0800</pubDate>
       <sparkle:version>2</sparkle:version>
       <sparkle:shortVersionString>1.1.0</sparkle:shortVersionString>
