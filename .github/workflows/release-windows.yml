@@ -37,9 +37,31 @@ jobs:
         run: dir build\windows\x64\runner\Release
         shell: cmd
 
-      - name: Upload raw build artifact (smoke test)
+      - name: Install NSIS
+        run: choco install nsis -y --no-progress
+        shell: pwsh
+
+      - name: Read version from pubspec.yaml
+        id: version
+        shell: pwsh
+        run: |
+          $line = Get-Content pubspec.yaml | Where-Object { $_ -match '^version:' } | Select-Object -First 1
+          $v = ($line -replace '^version:\s*', '') -replace '\+.*$', ''
+          echo "version=$v" >> $env:GITHUB_OUTPUT
+          echo "Read version: $v"
+
+      - name: Build NSIS installer
+        shell: pwsh
+        run: makensis "/DVERSION=${{ steps.version.outputs.version }}" installer\papersuitcase.nsi
+
+      - name: Show installer file
+        shell: pwsh
+        run: Get-ChildItem PaperSuitcase-Windows-v*.exe
+
+      - name: Upload installer artifact (manual-trigger smoke test)
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
-          name: papersuitcase-windows-raw-build
-          path: build/windows/x64/runner/Release/
+          name: papersuitcase-windows-installer
+          path: PaperSuitcase-Windows-v*.exe
           retention-days: 14
