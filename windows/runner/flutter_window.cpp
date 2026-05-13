@@ -4,6 +4,8 @@
 
 #include "flutter/generated_plugin_registrant.h"
 
+#include <winsparkle.h>
+
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
 
@@ -36,10 +38,17 @@ bool FlutterWindow::OnCreate() {
   // window is shown. It is a no-op if the first frame hasn't completed yet.
   flutter_controller_->ForceRedraw();
 
+  // WinSparkle auto-update. App version is read from the EXE's VERSIONINFO
+  // resource, which Flutter populates from pubspec.yaml.
+  win_sparkle_set_appcast_url(
+      "https://initialneil.github.io/papersuitcase/appcast.xml");
+  win_sparkle_init();
+
   return true;
 }
 
 void FlutterWindow::OnDestroy() {
+  win_sparkle_cleanup();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
