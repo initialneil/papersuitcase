@@ -38,8 +38,18 @@ jobs:
         shell: cmd
 
       - name: Install NSIS
-        run: choco install nsis -y --no-progress
         shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          # choco updates the machine PATH, but the current process and
+          # subsequent steps won't pick it up unless we append to GITHUB_PATH.
+          $nsisDir = "C:\Program Files (x86)\NSIS"
+          if (-not (Test-Path "$nsisDir\makensis.exe")) {
+            $alt = "C:\Program Files\NSIS"
+            if (Test-Path "$alt\makensis.exe") { $nsisDir = $alt }
+          }
+          echo "Using NSIS at: $nsisDir"
+          echo "$nsisDir" >> $env:GITHUB_PATH
 
       - name: Read version from pubspec.yaml
         id: version
