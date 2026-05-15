@@ -33,6 +33,9 @@ class _EmbeddedPdfViewerState extends State<EmbeddedPdfViewer> {
   // Track selected text for right-click context menu
   String? _selectedText;
 
+  // Trackpad pinch-to-zoom state
+  double _zoomAtPinchStart = 1.0;
+
   @override
   void dispose() {
     _controller.dispose();
@@ -141,6 +144,7 @@ class _EmbeddedPdfViewerState extends State<EmbeddedPdfViewer> {
 
   @override
   Widget build(BuildContext context) {
+    final appState = context.watch<AppState>();
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -191,6 +195,14 @@ class _EmbeddedPdfViewerState extends State<EmbeddedPdfViewer> {
             onPressed: () =>
                 _controller.zoomLevel = (_controller.zoomLevel - 0.25).clamp(0.5, 5.0),
           ),
+          if (appState.isLoggedIn)
+            IconButton(
+              icon: Icon(
+                appState.showChatPanel ? Icons.chat : Icons.chat_outlined,
+              ),
+              tooltip: 'Chat about this paper',
+              onPressed: () => appState.toggleChatPanel(),
+            ),
         ],
       ),
       body: Stack(
@@ -200,6 +212,15 @@ class _EmbeddedPdfViewerState extends State<EmbeddedPdfViewer> {
               // Right-click (secondary button)
               if (event.buttons == kSecondaryMouseButton) {
                 _showContextMenu(context, event.position);
+              }
+            },
+            onPointerPanZoomStart: (event) {
+              _zoomAtPinchStart = _controller.zoomLevel;
+            },
+            onPointerPanZoomUpdate: (event) {
+              final next = (_zoomAtPinchStart * event.scale).clamp(0.5, 5.0);
+              if ((next - _controller.zoomLevel).abs() > 0.001) {
+                _controller.zoomLevel = next;
               }
             },
             child: SfPdfViewer.file(

@@ -2,7 +2,7 @@ name: paper_suitecase
 description: "A Flutter desktop application for managing academic PDF papers with hierarchical tagging and arXiv integration."
 publish_to: 'none'
 
-version: 1.1.4+6
+version: 1.1.5+7
 
 environment:
   sdk: ^3.10.1

@@ -86,35 +86,9 @@ class _MainScreenState extends State<MainScreen> {
                           return Row(
                             children: [
                               Expanded(
-                                child: Stack(
-                                  children: [
-                                    EmbeddedPdfViewer(
-                                      paper: appState.viewingPaper!,
-                                      onBack: () =>
-                                          appState.closePaperViewer(),
-                                    ),
-                                    if (appState.isLoggedIn)
-                                      Positioned(
-                                        top: 8,
-                                        right: 8,
-                                        child: IconButton(
-                                          icon: Icon(
-                                            appState.showChatPanel
-                                                ? Icons.chat
-                                                : Icons.chat_outlined,
-                                          ),
-                                          onPressed: () =>
-                                              appState.toggleChatPanel(),
-                                          tooltip: 'Chat about this paper',
-                                          style: IconButton.styleFrom(
-                                            backgroundColor: Theme.of(context)
-                                                .colorScheme
-                                                .surface
-                                                .withValues(alpha: 0.9),
-                                          ),
-                                        ),
-                                      ),
-                                  ],
+                                child: EmbeddedPdfViewer(
+                                  paper: appState.viewingPaper!,
+                                  onBack: () => appState.closePaperViewer(),
                                 ),
                               ),
                               if (appState.isLoggedIn &&

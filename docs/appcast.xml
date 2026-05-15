@@ -6,26 +6,43 @@
     <description>Paper Suitcase release feed</description>
     <language>en</language>
     <item>
-      <title>Version 1.1.4</title>
+      <title>Version 1.1.5 (macOS)</title>
       <sparkle:os>macos</sparkle:os>
-      <pubDate>Mon, 11 May 2026 15:48:00 +0800</pubDate>
-      <sparkle:version>6</sparkle:version>
-      <sparkle:shortVersionString>1.1.4</sparkle:shortVersionString>
+      <pubDate>Fri, 15 May 2026 10:05:00 +0800</pubDate>
+      <sparkle:version>7</sparkle:version>
+      <sparkle:shortVersionString>1.1.5</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
       <description><![CDATA[
-        <h2>v1.1.4 — Nested Entry Folders</h2>
+        <h2>v1.1.5 — Windows support + PDF viewer polish</h2>
         <ul>
-          <li>Entry sidebar now renders the full nested folder tree — previously only the top-level subfolder showed, and deeper PDFs were lumped under it</li>
-          <li>Each subfolder has its own expand/collapse chevron and remembers state across rebuilds</li>
-          <li>Counts on each node now reflect all PDFs in that subtree</li>
-          <li>Subfolder filter no longer matches sibling folders by accident (e.g. "Avatar" no longer matches "AvatarStudio/…")</li>
+          <li>New: Paper Suitcase now runs on Windows 10+ (separate installer)</li>
+          <li>PDF viewer: chat button moved into the toolbar (no longer overlapping zoom-out)</li>
+          <li>PDF viewer: trackpad pinch-to-zoom on macOS</li>
         </ul>
       ]]></description>
       <enclosure
-        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.4/PaperSuitcase-macOS-v1.1.4.zip"
-        length="26503160"
+        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.5/PaperSuitcase-macOS-v1.1.5.zip"
+        length="26498362"
         type="application/octet-stream"
-        sparkle:edSignature="ZDBZYwUqWhxwRXqtdxnHJ5or1nOYQ+cwqQ1Q/Y31LmEtvmjF7iMTOO883nRPwOp9sJtpE5FXrwQ2DEYBXIMmCw=="
+        sparkle:edSignature="zc6CqaiENMaEoAaRj1jnQcSbLONar9Afc2I3odu3vCQdBYUE+jkg7VJkQLj98YJO0poDo5OOXQEgTHldp0jICQ=="
+      />
+    </item>
+    <item>
+      <title>Version 1.1.5 (Windows)</title>
+      <sparkle:os>windows</sparkle:os>
+      <pubDate>Fri, 15 May 2026 10:05:00 +0800</pubDate>
+      <sparkle:version>7</sparkle:version>
+      <sparkle:shortVersionString>1.1.5</sparkle:shortVersionString>
+      <description><![CDATA[
+        <h2>v1.1.5 — Windows support + PDF viewer polish</h2>
+        <ul>
+          <li>First Windows release. Welcome aboard.</li>
+          <li>PDF viewer: chat button in the toolbar; right-click context menu for zoom/copy/search</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.5/PaperSuitcase-Windows-v1.1.5-Setup.exe"
+        type="application/octet-stream"
       />
     </item>
     <item>
