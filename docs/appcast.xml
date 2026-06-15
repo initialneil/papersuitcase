@@ -6,42 +6,45 @@
     <description>Paper Suitcase release feed</description>
     <language>en</language>
     <item>
-      <title>Version 1.1.5 (macOS)</title>
+      <title>Version 1.1.6 (macOS)</title>
       <sparkle:os>macos</sparkle:os>
-      <pubDate>Fri, 15 May 2026 10:05:00 +0800</pubDate>
-      <sparkle:version>7</sparkle:version>
-      <sparkle:shortVersionString>1.1.5</sparkle:shortVersionString>
+      <pubDate>Mon, 15 Jun 2026 11:55:00 +0800</pubDate>
+      <sparkle:version>8</sparkle:version>
+      <sparkle:shortVersionString>1.1.6</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
       <description><![CDATA[
-        <h2>v1.1.5 — Windows support + PDF viewer polish</h2>
+        <h2>v1.1.6 — Smarter PDF downloads</h2>
         <ul>
-          <li>New: Paper Suitcase now runs on Windows 10+ (separate installer)</li>
-          <li>PDF viewer: chat button moved into the toolbar (no longer overlapping zoom-out)</li>
-          <li>PDF viewer: trackpad pinch-to-zoom on macOS</li>
+          <li>Direct PDF URLs: real title is now extracted from PDF metadata, editable in the dialog, and matched against existing papers</li>
+          <li>Tag-aware subfolder suggestion: defaults to where most papers under the current tag already live</li>
+          <li>Background downloads: window hides immediately on Download; progress shows in the sidebar footer</li>
+          <li>Parallel downloads queue with combined progress bar</li>
         </ul>
       ]]></description>
       <enclosure
-        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.5/PaperSuitcase-macOS-v1.1.5.zip"
-        length="26498362"
+        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.6/PaperSuitcase-macOS-v1.1.6.zip"
+        length="26519142"
         type="application/octet-stream"
-        sparkle:edSignature="zc6CqaiENMaEoAaRj1jnQcSbLONar9Afc2I3odu3vCQdBYUE+jkg7VJkQLj98YJO0poDo5OOXQEgTHldp0jICQ=="
+        sparkle:edSignature="/PEqyre4ZxnCU/YqnX4FAN/NepI3azlI1eJX264bLcPU2S5rQbfDk8HZX11dfZyaC1qwJPnrlBbzyl6OawvaBg=="
       />
     </item>
     <item>
-      <title>Version 1.1.5 (Windows)</title>
+      <title>Version 1.1.6 (Windows)</title>
       <sparkle:os>windows</sparkle:os>
-      <pubDate>Fri, 15 May 2026 10:05:00 +0800</pubDate>
-      <sparkle:version>7</sparkle:version>
-      <sparkle:shortVersionString>1.1.5</sparkle:shortVersionString>
+      <pubDate>Mon, 15 Jun 2026 11:55:00 +0800</pubDate>
+      <sparkle:version>8</sparkle:version>
+      <sparkle:shortVersionString>1.1.6</sparkle:shortVersionString>
       <description><![CDATA[
-        <h2>v1.1.5 — Windows support + PDF viewer polish</h2>
+        <h2>v1.1.6 — Smarter PDF downloads</h2>
         <ul>
-          <li>First Windows release. Welcome aboard.</li>
-          <li>PDF viewer: chat button in the toolbar; right-click context menu for zoom/copy/search</li>
+          <li>Direct PDF URLs: real title is now extracted from PDF metadata, editable in the dialog, and matched against existing papers</li>
+          <li>Tag-aware subfolder suggestion: defaults to where most papers under the current tag already live</li>
+          <li>Background downloads: window hides immediately on Download; progress shows in the sidebar footer</li>
+          <li>Parallel downloads queue with combined progress bar</li>
         </ul>
       ]]></description>
       <enclosure
-        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.5/PaperSuitcase-Windows-v1.1.5-Setup.exe"
+        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.6/PaperSuitcase-Windows-v1.1.6-Setup.exe"
         type="application/octet-stream"
       />
     </item>

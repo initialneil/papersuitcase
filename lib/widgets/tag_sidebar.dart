@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/download_task.dart';
 import '../providers/app_state.dart';
 import 'bibtex_manager.dart';
 import 'entry_sidebar_section.dart';
@@ -280,6 +281,60 @@ class _SyncIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurface.withValues(alpha: 0.5);
+
+    if (appState.hasActiveDownloads) {
+      final tasks = appState.downloads
+          .where((t) => t.status == DownloadStatus.downloading)
+          .toList();
+      final count = tasks.length;
+      int received = 0;
+      int total = 0;
+      bool anyUnknown = false;
+      for (final t in tasks) {
+        received += t.receivedBytes;
+        if (t.totalBytes == null) {
+          anyUnknown = true;
+        } else {
+          total += t.totalBytes!;
+        }
+      }
+      final double? progress = (anyUnknown || total == 0)
+          ? null
+          : (received / total).clamp(0.0, 1.0);
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.download_outlined, size: 14, color: muted),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    count == 1
+                        ? 'Downloading 1 paper'
+                        : 'Downloading $count papers',
+                    style: TextStyle(fontSize: 12, color: muted),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 3,
+                backgroundColor: muted.withValues(alpha: 0.15),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     if (appState.isSyncing) {
       return Padding(

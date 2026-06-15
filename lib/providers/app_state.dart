@@ -21,6 +21,7 @@ import '../services/sync_service.dart';
 import '../services/recommendation_service.dart';
 import '../services/llm_chat_service.dart';
 import '../models/chat_message.dart';
+import '../models/download_task.dart';
 
 class _NavigationState {
   final Tag? tag;
@@ -109,6 +110,9 @@ class AppState extends ChangeNotifier {
   bool _isChatLoading = false;
   bool _showChatPanel = false;
 
+  // Download queue state
+  final List<DownloadTask> _downloads = [];
+
   // Update state
   static const _sparkleChannel = MethodChannel('com.papersuitcase/sparkle');
   bool _updateAvailable = false;
@@ -159,6 +163,11 @@ class AppState extends ChangeNotifier {
   bool get showChatPanel => _showChatPanel;
   List<ChatMessage> getChatHistory(int paperId) =>
       _chatHistories[paperId] ?? [];
+
+  // Download Queue Getters
+  List<DownloadTask> get downloads => List.unmodifiable(_downloads);
+  bool get hasActiveDownloads =>
+      _downloads.any((t) => t.status == DownloadStatus.downloading);
 
   // Update Getters
   bool get updateAvailable => _updateAvailable;
@@ -1391,5 +1400,53 @@ class AppState extends ChangeNotifier {
       await prefs.remove('latestVersion');
       await prefs.remove('updateAvailable');
     }
+  }
+
+  // ===== Download Queue =====
+
+  void enqueueDownload(DownloadTask task) {
+    _downloads.add(task);
+    notifyListeners();
+  }
+
+  void updateDownloadProgress(String id, int received, int? total) {
+    final t = _downloads.firstWhere(
+      (t) => t.id == id,
+      orElse: () => DownloadTask(id: '', title: ''),
+    );
+    if (t.id.isEmpty) return;
+    t.receivedBytes = received;
+    if (total != null) t.totalBytes = total;
+    notifyListeners();
+  }
+
+  void completeDownload(String id) {
+    final t = _downloads.firstWhere(
+      (t) => t.id == id,
+      orElse: () => DownloadTask(id: '', title: ''),
+    );
+    if (t.id.isEmpty) return;
+    t.status = DownloadStatus.done;
+    if (t.totalBytes != null) t.receivedBytes = t.totalBytes!;
+    notifyListeners();
+    Future.delayed(const Duration(seconds: 3), () {
+      _downloads.removeWhere((task) => task.id == id);
+      notifyListeners();
+    });
+  }
+
+  void failDownload(String id, String error) {
+    final t = _downloads.firstWhere(
+      (t) => t.id == id,
+      orElse: () => DownloadTask(id: '', title: ''),
+    );
+    if (t.id.isEmpty) return;
+    t.status = DownloadStatus.failed;
+    t.error = error;
+    notifyListeners();
+    Future.delayed(const Duration(seconds: 6), () {
+      _downloads.removeWhere((task) => task.id == id);
+      notifyListeners();
+    });
   }
 }

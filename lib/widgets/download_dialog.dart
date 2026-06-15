@@ -1,15 +1,19 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 
+import '../models/download_task.dart';
 import '../models/entry.dart';
 import '../models/paper.dart';
 import '../models/tag.dart';
 import '../providers/app_state.dart';
 import '../database/database_service.dart';
 import '../services/arxiv_service.dart';
+import '../services/pdf_service.dart';
 
 /// Dialog for downloading papers from arXiv with smart context-aware suggestions
 /// and duplicate detection.
@@ -52,12 +56,16 @@ class DownloadDialog extends StatefulWidget {
 class _DownloadDialogState extends State<DownloadDialog> {
   final ArxivService _arxivService = ArxivService();
   final TextEditingController _subfolderController = TextEditingController();
+  final TextEditingController _titleController = TextEditingController();
 
   ArxivMetadata? _metadata;
   Entry? _selectedEntry;
   bool _isFetchingMetadata = true;
   bool _isDownloading = false;
   String? _error;
+  String? _prefetchedPath;
+  String _fetchingStatus = '';
+  Timer? _searchDebounce;
 
   // Tag suggestions
   List<Tag> _suggestedTags = [];
@@ -74,6 +82,7 @@ class _DownloadDialogState extends State<DownloadDialog> {
     super.initState();
     _initContext();
     _fetchMetadata();
+    _titleController.addListener(_onTitleChanged);
   }
 
   void _initContext() {
@@ -135,14 +144,18 @@ class _DownloadDialogState extends State<DownloadDialog> {
 
     final subfolders = <String, int>{};
     if (widget.contextTag != null) {
+      // Suggest where most papers under this tag already live. Scope to the
+      // currently selected entry so suggestions match the destination root.
       for (final paper in appState.papers) {
+        if (_selectedEntry != null && paper.entryId != _selectedEntry!.id) {
+          continue;
+        }
         final dir = p.dirname(paper.filePath);
         if (dir != '.' && dir.isNotEmpty) {
           subfolders[dir] = (subfolders[dir] ?? 0) + 1;
         }
       }
-    }
-    if (_selectedEntry != null) {
+    } else if (_selectedEntry != null) {
       void walk(List<SubfolderNode> nodes) {
         for (final n in nodes) {
           subfolders[n.relativePath] =
@@ -168,33 +181,39 @@ class _DownloadDialogState extends State<DownloadDialog> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _titleController.removeListener(_onTitleChanged);
+    _titleController.dispose();
     _subfolderController.dispose();
+    final orphan = _prefetchedPath;
+    if (orphan != null) {
+      _prefetchedPath = null;
+      Future.microtask(() async {
+        try {
+          await File(orphan).delete();
+        } catch (_) {}
+      });
+    }
     super.dispose();
+  }
+
+  void _onTitleChanged() {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 500), () async {
+      if (!mounted || _isFetchingMetadata) return;
+      final title = _titleController.text.trim();
+      if (title.isEmpty) return;
+      final arxivId =
+          widget.isDirectPdf ? '' : (_metadata?.arxivId ?? '');
+      final similar = await _findSimilarPapers(title, arxivId);
+      if (!mounted) return;
+      setState(() => _similarPapers = similar);
+    });
   }
 
   Future<void> _fetchMetadata() async {
     if (widget.isDirectPdf) {
-      // Direct PDF URL — derive title from filename
-      final uri = Uri.parse(widget.pdfUrl!);
-      var filename = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : 'paper';
-      if (filename.toLowerCase().endsWith('.pdf')) {
-        filename = filename.substring(0, filename.length - 4);
-      }
-      // Convert hyphens/underscores to spaces for a readable title
-      final title = filename
-          .replaceAll(RegExp(r'[-_]+'), ' ')
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .trim();
-      setState(() {
-        _metadata = ArxivMetadata(
-          arxivId: '',
-          title: title.isNotEmpty ? title : 'Untitled',
-          authors: '',
-          abstract: '',
-          pdfUrl: widget.pdfUrl!,
-        );
-        _isFetchingMetadata = false;
-      });
+      await _fetchDirectPdfMetadata();
       return;
     }
 
@@ -222,6 +241,7 @@ class _DownloadDialogState extends State<DownloadDialog> {
 
         setState(() {
           _metadata = metadata;
+          _titleController.text = metadata.title;
           _similarPapers = similar;
           _isFetchingMetadata = false;
         });
@@ -235,6 +255,100 @@ class _DownloadDialogState extends State<DownloadDialog> {
     }
   }
 
+  Future<void> _fetchDirectPdfMetadata() async {
+    final pdfUrl = widget.pdfUrl!;
+    String? prefetched;
+    String parsedTitle = '';
+
+    try {
+      if (pdfUrl.startsWith('file://')) {
+        final localPath = Uri.parse(pdfUrl).toFilePath();
+        if (mounted) {
+          setState(() => _fetchingStatus = 'Reading PDF…');
+        }
+        final result = await PdfService().extractInIsolate(localPath);
+        parsedTitle = (result['title'] ?? '').trim();
+      } else {
+        if (mounted) {
+          setState(() => _fetchingStatus = 'Downloading PDF…');
+        }
+        final tempPath = p.join(
+          Directory.systemTemp.path,
+          'papersuitcase_${DateTime.now().microsecondsSinceEpoch}.pdf',
+        );
+        final response = await http.get(Uri.parse(pdfUrl));
+        if (response.statusCode != 200) {
+          throw Exception('HTTP ${response.statusCode}');
+        }
+        final tempFile = File(tempPath);
+        await tempFile.writeAsBytes(response.bodyBytes);
+        prefetched = tempPath;
+        if (mounted) {
+          setState(() => _fetchingStatus = 'Reading PDF title…');
+        }
+        final result = await PdfService().extractInIsolate(tempPath);
+        parsedTitle = (result['title'] ?? '').trim();
+      }
+    } catch (_) {
+      // fall through to filename-derived title
+    }
+
+    // Strip the syncfusion fallback that returns basenameWithoutExtension —
+    // for prefetched temp files that's our generated junk name.
+    if (prefetched != null &&
+        parsedTitle == p.basenameWithoutExtension(prefetched)) {
+      parsedTitle = '';
+    }
+
+    if (parsedTitle.isEmpty) {
+      final uri = Uri.parse(pdfUrl);
+      var filename =
+          uri.pathSegments.isNotEmpty ? uri.pathSegments.last : 'paper';
+      if (filename.toLowerCase().endsWith('.pdf')) {
+        filename = filename.substring(0, filename.length - 4);
+      }
+      parsedTitle = filename
+          .replaceAll(RegExp(r'[-_]+'), ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+      if (parsedTitle.isEmpty) parsedTitle = 'Untitled';
+    }
+
+    if (!mounted) {
+      if (prefetched != null) {
+        try {
+          await File(prefetched).delete();
+        } catch (_) {}
+      }
+      return;
+    }
+
+    final similar = await _findSimilarPapers(parsedTitle, '');
+    if (!mounted) {
+      if (prefetched != null) {
+        try {
+          await File(prefetched).delete();
+        } catch (_) {}
+      }
+      return;
+    }
+
+    setState(() {
+      _metadata = ArxivMetadata(
+        arxivId: '',
+        title: parsedTitle,
+        authors: '',
+        abstract: '',
+        pdfUrl: pdfUrl,
+      );
+      _titleController.text = parsedTitle;
+      _prefetchedPath = prefetched;
+      _similarPapers = similar;
+      _isFetchingMetadata = false;
+      _fetchingStatus = '';
+    });
+  }
+
   /// Fuzzy search for existing papers by title keywords and arxiv ID
   Future<List<Paper>> _findSimilarPapers(
       String title, String arxivId) async {
@@ -242,13 +356,31 @@ class _DownloadDialogState extends State<DownloadDialog> {
     final results = <Paper>[];
     final seenIds = <int>{};
 
-    // 1. Exact arXiv ID match
+    // 1. Exact arXiv ID match (skip when no arXiv ID is known)
+    if (arxivId.isNotEmpty) {
+      try {
+        final allPapers = await db.getAllPapers();
+        for (final paper in allPapers) {
+          if (paper.arxivId == arxivId) {
+            results.add(paper);
+            if (paper.id != null) seenIds.add(paper.id!);
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 1b. Exact title match (case-insensitive) — catches dedup regardless of source.
     try {
-      final allPapers = await db.getAllPapers();
-      for (final paper in allPapers) {
-        if (paper.arxivId == arxivId) {
-          results.add(paper);
-          if (paper.id != null) seenIds.add(paper.id!);
+      final normalized = title.trim().toLowerCase();
+      if (normalized.isNotEmpty) {
+        final allPapers = await db.getAllPapers();
+        for (final paper in allPapers) {
+          if (paper.id != null &&
+              !seenIds.contains(paper.id!) &&
+              paper.title.trim().toLowerCase() == normalized) {
+            results.add(paper);
+            seenIds.add(paper.id!);
+          }
         }
       }
     } catch (_) {}
@@ -340,90 +472,156 @@ class _DownloadDialogState extends State<DownloadDialog> {
     );
   }
 
-  String _sanitizeFilename(String name) {
-    return name
-        .replaceAll(RegExp(r'[<>:"/\\|?*]'), '_')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-  }
-
   Future<void> _download() async {
     if (_metadata == null || _selectedEntry == null) return;
+    final editedTitle = _titleController.text.trim();
+    if (editedTitle.isEmpty) {
+      setState(() => _error = 'Title cannot be empty');
+      return;
+    }
     setState(() => _isDownloading = true);
 
+    // Snapshot user-selected state before tearing down the dialog.
+    final appState = context.read<AppState>();
+    final entry = _selectedEntry!;
+    final subfolder = _subfolderController.text.trim();
+    final metadata = _metadata!;
+    final tagIds = Set<int>.from(_selectedTagIds);
+    final newTagNames = List<String>.from(_newTagNames);
+    final isDirectPdf = widget.isDirectPdf;
+    final prefetched = _prefetchedPath;
+    _prefetchedPath = null; // ownership transferred to _runDownload
+
+    final taskId = DateTime.now().microsecondsSinceEpoch.toString();
+    appState.enqueueDownload(DownloadTask(id: taskId, title: editedTitle));
+
+    // Close the dialog and hide the window immediately. The actual work runs
+    // in the background; progress shows in the sidebar footer.
+    Navigator.of(context).pop();
+    unawaited(windowManager.hide());
+
+    unawaited(_runDownload(
+      appState: appState,
+      taskId: taskId,
+      entry: entry,
+      subfolder: subfolder,
+      metadata: metadata,
+      editedTitle: editedTitle,
+      tagIds: tagIds,
+      newTagNames: newTagNames,
+      isDirectPdf: isDirectPdf,
+      prefetchedPath: prefetched,
+    ));
+  }
+
+  static Future<void> _runDownload({
+    required AppState appState,
+    required String taskId,
+    required Entry entry,
+    required String subfolder,
+    required ArxivMetadata metadata,
+    required String editedTitle,
+    required Set<int> tagIds,
+    required List<String> newTagNames,
+    required bool isDirectPdf,
+    String? prefetchedPath,
+  }) async {
     try {
-      var destDir = _selectedEntry!.path;
-      final subfolder = _subfolderController.text.trim();
+      var destDir = entry.path;
       if (subfolder.isNotEmpty) {
         destDir = p.join(destDir, subfolder);
         await Directory(destDir).create(recursive: true);
       }
 
-      final pdfUrl = _metadata!.pdfUrl;
-      final sanitizedTitle = _sanitizeFilename(_metadata!.title);
-      final fileName = '$sanitizedTitle.pdf';
+      final pdfUrl = metadata.pdfUrl;
+      final fileName = '${_sanitizeFilenameStatic(editedTitle)}.pdf';
       final filePath = p.join(destDir, fileName);
 
-      if (pdfUrl.startsWith('file://')) {
-        // Local file — copy it
+      if (prefetchedPath != null) {
+        // We already downloaded the PDF for title parsing. Just move it.
+        final size = await File(prefetchedPath).length();
+        appState.updateDownloadProgress(taskId, 0, size);
+        await File(prefetchedPath).copy(filePath);
+        try {
+          await File(prefetchedPath).delete();
+        } catch (_) {}
+        appState.updateDownloadProgress(taskId, size, size);
+      } else if (pdfUrl.startsWith('file://')) {
         final sourcePath = Uri.parse(pdfUrl).toFilePath();
+        final bytes = await File(sourcePath).length();
+        appState.updateDownloadProgress(taskId, 0, bytes);
         await File(sourcePath).copy(filePath);
+        appState.updateDownloadProgress(taskId, bytes, bytes);
       } else {
-        // Remote URL — download it
-        final response = await http.get(Uri.parse(pdfUrl));
-        if (response.statusCode != 200) {
-          throw Exception('Download failed with status ${response.statusCode}');
+        final client = http.Client();
+        try {
+          final request = http.Request('GET', Uri.parse(pdfUrl));
+          final response = await client.send(request);
+          if (response.statusCode != 200) {
+            throw Exception(
+                'Download failed with status ${response.statusCode}');
+          }
+          final total = response.contentLength;
+          appState.updateDownloadProgress(taskId, 0, total);
+
+          final sink = File(filePath).openWrite();
+          var received = 0;
+          try {
+            await for (final chunk in response.stream) {
+              sink.add(chunk);
+              received += chunk.length;
+              appState.updateDownloadProgress(taskId, received, total);
+            }
+          } finally {
+            await sink.close();
+          }
+        } finally {
+          client.close();
         }
-        await File(filePath).writeAsBytes(response.bodyBytes);
       }
 
-      final relativePath = p.relative(filePath, from: _selectedEntry!.path);
-
-      if (!mounted) return;
+      final relativePath = p.relative(filePath, from: entry.path);
       final db = DatabaseService();
       final paper = Paper(
-        title: _metadata!.title,
+        title: editedTitle,
         filePath: relativePath,
-        entryId: _selectedEntry!.id!,
-        arxivId: widget.isDirectPdf ? null : _metadata!.arxivId,
-        authors: _metadata!.authors.isNotEmpty ? _metadata!.authors : null,
-        abstract: _metadata!.abstract.isNotEmpty ? _metadata!.abstract : null,
-        arxivUrl: widget.isDirectPdf
+        entryId: entry.id!,
+        arxivId: isDirectPdf ? null : metadata.arxivId,
+        authors: metadata.authors.isNotEmpty ? metadata.authors : null,
+        abstract: metadata.abstract.isNotEmpty ? metadata.abstract : null,
+        arxivUrl: isDirectPdf
             ? null
-            : _metadata!.pdfUrl
+            : metadata.pdfUrl
                 .replaceAll('/pdf/', '/abs/')
                 .replaceAll('.pdf', ''),
       );
       final paperId = await db.insertPaper(paper);
 
-      for (final tagId in _selectedTagIds) {
+      for (final tagId in tagIds) {
         await db.addTagToPaper(paperId, tagId);
       }
-      for (final tagName in _newTagNames) {
+      for (final tagName in newTagNames) {
         final tag = await db.getOrCreateTag(tagName);
         await db.addTagToPaper(paperId, tag.id!);
       }
 
-      if (!mounted) return;
-      final appState = context.read<AppState>();
       await appState.scanAllEntries();
-
-      if (mounted) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Downloaded: ${_metadata!.title}'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      appState.completeDownload(taskId);
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isDownloading = false;
-        _error = 'Download failed: $e';
-      });
+      if (prefetchedPath != null) {
+        try {
+          await File(prefetchedPath).delete();
+        } catch (_) {}
+      }
+      appState.failDownload(taskId, e.toString());
     }
+  }
+
+  static String _sanitizeFilenameStatic(String name) {
+    return name
+        .replaceAll(RegExp(r'[<>:"/\\|?*]'), '_')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 
   @override
@@ -439,9 +637,19 @@ class _DownloadDialogState extends State<DownloadDialog> {
       content: SizedBox(
         width: hasSimilar ? 850 : 550,
         child: _isFetchingMetadata
-            ? const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(child: CircularProgressIndicator()),
+            ? Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Center(child: CircularProgressIndicator()),
+                    if (_fetchingStatus.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(_fetchingStatus,
+                          style: Theme.of(context).textTheme.bodySmall),
+                    ],
+                  ],
+                ),
               )
             : _error != null && _metadata == null
                 ? Text(_error!,
@@ -640,30 +848,41 @@ class _DownloadDialogState extends State<DownloadDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            meta.title,
+          TextField(
+            controller: _titleController,
+            enabled: !_isDownloading,
+            minLines: 1,
+            maxLines: 3,
             style: Theme.of(context)
                 .textTheme
                 .titleMedium
                 ?.copyWith(fontWeight: FontWeight.bold),
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
+            decoration: InputDecoration(
+              isDense: true,
+              labelText: 'Title',
+              border: const OutlineInputBorder(),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            meta.authors,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurface.withValues(alpha: 0.6)),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 8),
-          if (abstractPreview.isNotEmpty)
+          if (meta.authors.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              meta.authors,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurface.withValues(alpha: 0.6)),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+          if (abstractPreview.isNotEmpty) ...[
+            const SizedBox(height: 8),
             Text(
               abstractPreview,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: colorScheme.onSurface.withValues(alpha: 0.5)),
             ),
+          ],
           if (_error != null) ...[
             const SizedBox(height: 8),
             Text(_error!,
