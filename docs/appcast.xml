@@ -6,45 +6,41 @@
     <description>Paper Suitcase release feed</description>
     <language>en</language>
     <item>
-      <title>Version 1.1.6 (macOS)</title>
+      <title>Version 1.1.7 (macOS)</title>
       <sparkle:os>macos</sparkle:os>
-      <pubDate>Mon, 15 Jun 2026 11:55:00 +0800</pubDate>
-      <sparkle:version>8</sparkle:version>
-      <sparkle:shortVersionString>1.1.6</sparkle:shortVersionString>
+      <pubDate>Tue, 21 Jul 2026 15:23:10 +0800</pubDate>
+      <sparkle:version>9</sparkle:version>
+      <sparkle:shortVersionString>1.1.7</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
       <description><![CDATA[
-        <h2>v1.1.6 — Smarter PDF downloads</h2>
+        <h2>v1.1.7 — ACM / DOI links</h2>
         <ul>
-          <li>Direct PDF URLs: real title is now extracted from PDF metadata, editable in the dialog, and matched against existing papers</li>
-          <li>Tag-aware subfolder suggestion: defaults to where most papers under the current tag already live</li>
-          <li>Background downloads: window hides immediately on Download; progress shows in the sidebar footer</li>
-          <li>Parallel downloads queue with combined progress bar</li>
+          <li>Paste an ACM Digital Library (dl.acm.org) or doi.org link in the search bar and hit <strong>Open</strong> to jump straight to the PDF in your browser</li>
+          <li>Publisher PDFs are behind a paywall/Cloudflare check, so the download runs in your browser (with your access) — then drag the PDF back in to import it</li>
         </ul>
       ]]></description>
       <enclosure
-        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.6/PaperSuitcase-macOS-v1.1.6.zip"
-        length="26519142"
+        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.7/PaperSuitcase-macOS-v1.1.7.zip"
+        length="26517809"
         type="application/octet-stream"
-        sparkle:edSignature="/PEqyre4ZxnCU/YqnX4FAN/NepI3azlI1eJX264bLcPU2S5rQbfDk8HZX11dfZyaC1qwJPnrlBbzyl6OawvaBg=="
+        sparkle:edSignature="XNKaPf12y9WCHZgokooxw7tiVwLO9wyJdjdbnPlQIf7ySrYCmzJSEaP/UmQWCaxumEnQ+AsF0n3Ogar2J9bWBQ=="
       />
     </item>
     <item>
-      <title>Version 1.1.6 (Windows)</title>
+      <title>Version 1.1.7 (Windows)</title>
       <sparkle:os>windows</sparkle:os>
-      <pubDate>Mon, 15 Jun 2026 11:55:00 +0800</pubDate>
-      <sparkle:version>8</sparkle:version>
-      <sparkle:shortVersionString>1.1.6</sparkle:shortVersionString>
+      <pubDate>Tue, 21 Jul 2026 15:23:10 +0800</pubDate>
+      <sparkle:version>9</sparkle:version>
+      <sparkle:shortVersionString>1.1.7</sparkle:shortVersionString>
       <description><![CDATA[
-        <h2>v1.1.6 — Smarter PDF downloads</h2>
+        <h2>v1.1.7 — ACM / DOI links</h2>
         <ul>
-          <li>Direct PDF URLs: real title is now extracted from PDF metadata, editable in the dialog, and matched against existing papers</li>
-          <li>Tag-aware subfolder suggestion: defaults to where most papers under the current tag already live</li>
-          <li>Background downloads: window hides immediately on Download; progress shows in the sidebar footer</li>
-          <li>Parallel downloads queue with combined progress bar</li>
+          <li>Paste an ACM Digital Library (dl.acm.org) or doi.org link in the search bar and hit <strong>Open</strong> to jump straight to the PDF in your browser</li>
+          <li>Publisher PDFs are behind a paywall/Cloudflare check, so the download runs in your browser (with your access) — then drag the PDF back in to import it</li>
         </ul>
       ]]></description>
       <enclosure
-        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.6/PaperSuitcase-Windows-v1.1.6-Setup.exe"
+        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.7/PaperSuitcase-Windows-v1.1.7-Setup.exe"
         type="application/octet-stream"
       />
     </item>

@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/app_state.dart';
 import '../services/arxiv_service.dart';
+import '../services/doi_service.dart';
 import 'download_dialog.dart';
 
 /// Search bar with arXiv/DOI URL detection
@@ -23,7 +25,6 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
 
   static final _arxivPattern =
       RegExp(r'arxiv\.org/(abs|pdf)/(\d+\.\d+(v\d+)?)');
-  static final _doiPattern = RegExp(r'doi\.org/10\.\S+');
   static final _pdfUrlPattern =
       RegExp(r'^(https?://|file://).+\.pdf(\?\S*)?$', caseSensitive: false);
 
@@ -38,7 +39,7 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
     if (_arxivPattern.hasMatch(value) || ArxivService.isArxivUrl(value)) {
       return _DetectedUrlType.arxiv;
     }
-    if (_doiPattern.hasMatch(value)) {
+    if (DoiService.isDoiUrl(value)) {
       return _DetectedUrlType.doi;
     }
     if (_pdfUrlPattern.hasMatch(value.trim())) {
@@ -62,16 +63,26 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
     }
   }
 
-  void _handleFetch() {
+  Future<void> _handleFetch() async {
     final text = _controller.text.trim();
     if (_detectedType == _DetectedUrlType.arxiv) {
       DownloadDialog.show(context, arxivUrl: text);
     } else if (_detectedType == _DetectedUrlType.pdf) {
       DownloadDialog.show(context, pdfUrl: text);
     } else if (_detectedType == _DetectedUrlType.doi) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('DOI support coming soon'),
+      // Publishers like ACM sit behind a Cloudflare JS challenge, so we can't
+      // fetch the PDF in-app. Hand off to the browser (user's session passes
+      // the challenge + carries their access); they drag the PDF back to import.
+      final messenger = ScaffoldMessenger.of(context);
+      final url = DoiService.pdfBrowserUrl(text);
+      final ok =
+          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(ok
+              ? 'Opened in your browser — download the PDF there, then drag it here to import.'
+              : 'Could not open the browser for this link.'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -116,7 +127,7 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
                 child: TextField(
                   controller: _controller,
                   decoration: InputDecoration(
-                    hintText: 'Search papers or paste arXiv/PDF URL...',
+                    hintText: 'Search papers or paste arXiv / PDF / DOI URL...',
                     hintStyle: TextStyle(
                       color: Theme.of(
                         context,
@@ -148,32 +159,29 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
                   },
                 ),
 
-              // Fetch button (shown when URL detected)
+              // Fetch button (shown when a URL is detected). arXiv/PDF download
+              // in-app; DOI (ACM etc.) opens in the browser — Cloudflare blocks
+              // in-app fetching of publisher PDFs.
               if (_detectedType == _DetectedUrlType.arxiv ||
-                  _detectedType == _DetectedUrlType.pdf) ...[
-                Container(
-                  height: 32,
-                  margin: const EdgeInsets.only(right: 8),
-                  child: FilledButton.icon(
-                    onPressed: _handleFetch,
-                    icon: const Icon(Icons.download, size: 18),
-                    label: const Text('Fetch'),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      textStyle: const TextStyle(fontSize: 14),
-                    ),
-                  ),
-                ),
-              ] else if (_detectedType == _DetectedUrlType.doi) ...[
+                  _detectedType == _DetectedUrlType.pdf ||
+                  _detectedType == _DetectedUrlType.doi) ...[
                 Container(
                   height: 32,
                   margin: const EdgeInsets.only(right: 8),
                   child: Tooltip(
-                    message: 'DOI support coming soon',
+                    message: _detectedType == _DetectedUrlType.doi
+                        ? 'Opens in your browser to download (publisher access required)'
+                        : 'Download into your library',
                     child: FilledButton.icon(
                       onPressed: _handleFetch,
-                      icon: const Icon(Icons.download, size: 18),
-                      label: const Text('Fetch'),
+                      icon: Icon(
+                        _detectedType == _DetectedUrlType.doi
+                            ? Icons.open_in_new
+                            : Icons.download,
+                        size: 18,
+                      ),
+                      label: Text(
+                          _detectedType == _DetectedUrlType.doi ? 'Open' : 'Fetch'),
                       style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         textStyle: const TextStyle(fontSize: 14),
