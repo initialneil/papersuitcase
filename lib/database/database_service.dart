@@ -240,6 +240,33 @@ class DatabaseService {
     }
     values['dirty'] = 1;
     values['updated_at'] = DateTime.now().toIso8601String();
+
+    // file_path is globally UNIQUE. If a row already holds it, a plain insert
+    // throws — so reconcile instead: a soft-deleted row (deleted the file, then
+    // it reappeared on disk) is REVIVED, keeping its title/tags; a live row is
+    // a genuine duplicate we no-op on. This is what makes a re-added file show
+    // up again rather than staying invisible-but-present.
+    final existing = await db.query('papers',
+        columns: ['id', 'deleted_at'],
+        where: 'file_path = ?',
+        whereArgs: [values['file_path']],
+        limit: 1);
+    if (existing.isNotEmpty) {
+      final id = existing.first['id'] as int;
+      if (existing.first['deleted_at'] != null) {
+        await db.update(
+          'papers',
+          {
+            'deleted_at': null,
+            'dirty': 1,
+            'updated_at': values['updated_at'],
+          },
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      }
+      return id;
+    }
     return await db.insert('papers', values);
   }
 

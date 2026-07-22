@@ -16,6 +16,7 @@ import '../services/pdf_service.dart';
 import '../services/arxiv_service.dart';
 import '../services/entry_scanner_service.dart';
 import '../services/manifest_service.dart';
+import '../services/file_trash_service.dart';
 import '../services/supabase_service.dart';
 import '../services/sync_service.dart';
 import '../services/recommendation_service.dart';
@@ -397,8 +398,34 @@ class AppState extends ChangeNotifier {
       if (entry.id == null) continue;
 
       final entryPapers = await _db.getPapersByEntry(entry.id!);
-      entry.subfolderTree = _buildSubfolderTree(entryPapers, entry.id!, oldSubExpanded);
+      final diskDirs = await _listDiskSubdirs(entry.path);
+      entry.subfolderTree =
+          _buildSubfolderTree(entryPapers, entry.id!, oldSubExpanded, diskDirs);
     }
+  }
+
+  /// Every subdirectory (relative, forward-slash) under [entryPath], so an
+  /// empty folder still shows in the tree. Skips the cache + hidden dirs.
+  /// ponytail: recursive FS walk per entry per refresh — fine at hundreds of
+  /// files; cache off the scanner if entries ever get huge.
+  Future<Set<String>> _listDiskSubdirs(String entryPath) async {
+    final dirs = <String>{};
+    try {
+      final root = Directory(entryPath);
+      if (!await root.exists()) return dirs;
+      await for (final entity
+          in root.list(recursive: true, followLinks: true)) {
+        if (entity is! Directory) continue;
+        final rel = p.relative(entity.path, from: entryPath);
+        if (rel.isEmpty || rel == '.') continue;
+        final segments = p.split(rel);
+        if (segments.any((s) => s == '.papersuitcase' || s.startsWith('.'))) {
+          continue;
+        }
+        dirs.add(segments.join('/'));
+      }
+    } catch (_) {}
+    return dirs;
   }
 
   /// Build a nested tree of subfolders from a list of papers in an entry.
@@ -408,6 +435,7 @@ class AppState extends ChangeNotifier {
     List<Paper> entryPapers,
     int entryId,
     Set<String> oldExpanded,
+    Set<String> diskDirs,
   ) {
     // Path -> node, for fast lookup at any depth.
     final byPath = <String, SubfolderNode>{};
@@ -448,6 +476,35 @@ class AppState extends ChangeNotifier {
         node.totalCount++;
         if (i == segments.length - 1) {
           node.directCount++;
+        }
+        parent = node;
+      }
+    }
+
+    // Merge in directories that exist on disk but hold no papers, so an empty
+    // folder still appears (with a 0 count). Nodes already built from papers
+    // are left untouched.
+    for (final dir in diskDirs) {
+      final segments =
+          p.split(dir).where((s) => s.isNotEmpty && s != '.').toList();
+      var accumulatedPath = '';
+      SubfolderNode? parent;
+      for (final segment in segments) {
+        accumulatedPath =
+            accumulatedPath.isEmpty ? segment : '$accumulatedPath/$segment';
+        var node = byPath[accumulatedPath];
+        if (node == null) {
+          node = SubfolderNode(
+            name: segment,
+            relativePath: accumulatedPath,
+            isExpanded: oldExpanded.contains('$entryId:$accumulatedPath'),
+          );
+          byPath[accumulatedPath] = node;
+          if (parent == null) {
+            roots.add(node);
+          } else {
+            parent.children.add(node);
+          }
         }
         parent = node;
       }
@@ -829,13 +886,21 @@ class AppState extends ChangeNotifier {
     await refresh();
   }
 
-  /// Remove a paper from the DB, manifest, and cache. Never deletes from disk.
+  /// Remove a paper: move its PDF to the OS trash (recoverable), then soft-delete
+  /// the DB record + drop its manifest/cache. The file MUST leave the folder —
+  /// otherwise the scanner would re-add it (a file on disk always displays).
   Future<void> removePaper(Paper paper) async {
     try {
       // Find the entry for this paper
       final entry = _entries.where((e) => e.id == paper.entryId).firstOrNull;
 
-      // Remove from DB
+      // Move the actual PDF to the trash before soft-deleting the record.
+      if (entry != null) {
+        final fullPath = p.join(entry.path, paper.filePath);
+        await FileTrashService.moveToTrash(fullPath);
+      }
+
+      // Remove from DB (soft-delete; drives sync tombstone)
       await _db.deletePaper(paper.id!);
 
       // Remove from manifest and cache if entry exists
@@ -914,6 +979,27 @@ class AppState extends ChangeNotifier {
     } else {
       return await PdfService.openWithSystemViewer(fullPath);
     }
+  }
+
+  /// Open the paper in the in-app embedded viewer, regardless of the default
+  /// reader setting.
+  void openPaperInApp(Paper paper) {
+    _openTabs.removeWhere((p) => p.id == paper.id);
+    _openTabs.insert(0, paper);
+    _viewingPaper = paper;
+    _isConfigMode = false;
+    notifyListeners();
+  }
+
+  /// Open the paper with the OS default PDF application.
+  Future<bool> openPaperWithSystemDefault(Paper paper) async {
+    return await PdfService.openWithSystemViewer(resolveFullPath(paper));
+  }
+
+  /// Open the paper with a specific application (one-off — does not change the
+  /// default reader setting).
+  Future<bool> openPaperWithApp(Paper paper, String appPath) async {
+    return await PdfService.openWithCustomApp(resolveFullPath(paper), appPath);
   }
 
   /// Close embedded viewer

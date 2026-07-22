@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -16,7 +17,7 @@ class SearchBarWidget extends StatefulWidget {
   State<SearchBarWidget> createState() => _SearchBarWidgetState();
 }
 
-enum _DetectedUrlType { none, arxiv, doi, pdf }
+enum _DetectedUrlType { none, arxiv, doi, pdf, localPdf }
 
 class _SearchBarWidgetState extends State<SearchBarWidget> {
   final TextEditingController _controller = TextEditingController();
@@ -26,7 +27,26 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
   static final _arxivPattern =
       RegExp(r'arxiv\.org/(abs|pdf)/(\d+\.\d+(v\d+)?)');
   static final _pdfUrlPattern =
-      RegExp(r'^(https?://|file://).+\.pdf(\?\S*)?$', caseSensitive: false);
+      RegExp(r'^https?://.+\.pdf(\?\S*)?$', caseSensitive: false);
+
+  /// If [value] is a local PDF (a `file://` URL or a bare absolute/`~` path to
+  /// an existing `.pdf`), returns its `file://` URL; otherwise null. Used to
+  /// import a PDF the user pastes by path — the download dialog already reads
+  /// `file://` sources, extracts the title, and copies into the entry.
+  String? _localPdfFileUrl(String value) {
+    final v = value.trim();
+    if (!v.toLowerCase().endsWith('.pdf')) return null;
+    if (v.startsWith('file://')) return v;
+    var path = v;
+    if (path.startsWith('~/')) {
+      final home = Platform.environment['HOME'];
+      if (home != null) path = home + path.substring(1);
+    }
+    if (path.startsWith('/') && File(path).existsSync()) {
+      return Uri.file(path).toString();
+    }
+    return null;
+  }
 
   @override
   void dispose() {
@@ -41,6 +61,9 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
     }
     if (DoiService.isDoiUrl(value)) {
       return _DetectedUrlType.doi;
+    }
+    if (_localPdfFileUrl(value) != null) {
+      return _DetectedUrlType.localPdf;
     }
     if (_pdfUrlPattern.hasMatch(value.trim())) {
       return _DetectedUrlType.pdf;
@@ -69,6 +92,9 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
       DownloadDialog.show(context, arxivUrl: text);
     } else if (_detectedType == _DetectedUrlType.pdf) {
       DownloadDialog.show(context, pdfUrl: text);
+    } else if (_detectedType == _DetectedUrlType.localPdf) {
+      final fileUrl = _localPdfFileUrl(text);
+      if (fileUrl != null) DownloadDialog.show(context, pdfUrl: fileUrl);
     } else if (_detectedType == _DetectedUrlType.doi) {
       // Publishers like ACM sit behind a Cloudflare JS challenge, so we can't
       // fetch the PDF in-app. Hand off to the browser (user's session passes
@@ -159,36 +185,42 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
                   },
                 ),
 
-              // Fetch button (shown when a URL is detected). arXiv/PDF download
-              // in-app; DOI (ACM etc.) opens in the browser — Cloudflare blocks
-              // in-app fetching of publisher PDFs.
-              if (_detectedType == _DetectedUrlType.arxiv ||
-                  _detectedType == _DetectedUrlType.pdf ||
-                  _detectedType == _DetectedUrlType.doi) ...[
-                Container(
-                  height: 32,
-                  margin: const EdgeInsets.only(right: 8),
-                  child: Tooltip(
-                    message: _detectedType == _DetectedUrlType.doi
-                        ? 'Opens in your browser to download (publisher access required)'
-                        : 'Download into your library',
-                    child: FilledButton.icon(
-                      onPressed: _handleFetch,
-                      icon: Icon(
-                        _detectedType == _DetectedUrlType.doi
-                            ? Icons.open_in_new
-                            : Icons.download,
-                        size: 18,
-                      ),
-                      label: Text(
-                          _detectedType == _DetectedUrlType.doi ? 'Open' : 'Fetch'),
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        textStyle: const TextStyle(fontSize: 14),
+              // Action button (shown when a URL/path is detected). arXiv/PDF
+              // download in-app; a local PDF path imports; DOI (ACM etc.) opens
+              // in the browser — Cloudflare blocks in-app fetching of publisher
+              // PDFs.
+              if (_detectedType != _DetectedUrlType.none) ...[
+                () {
+                  final isDoi = _detectedType == _DetectedUrlType.doi;
+                  final isImport = _detectedType == _DetectedUrlType.localPdf;
+                  return Container(
+                    height: 32,
+                    margin: const EdgeInsets.only(right: 8),
+                    child: Tooltip(
+                      message: isDoi
+                          ? 'Opens in your browser to download (publisher access required)'
+                          : isImport
+                              ? 'Import this PDF into your library'
+                              : 'Download into your library',
+                      child: FilledButton.icon(
+                        onPressed: _handleFetch,
+                        icon: Icon(
+                          isDoi ? Icons.open_in_new : Icons.download,
+                          size: 18,
+                        ),
+                        label: Text(isDoi
+                            ? 'Open'
+                            : isImport
+                                ? 'Import'
+                                : 'Fetch'),
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          textStyle: const TextStyle(fontSize: 14),
+                        ),
                       ),
                     ),
-                  ),
-                ),
+                  );
+                }(),
               ] else
                 const SizedBox(width: 8),
             ],

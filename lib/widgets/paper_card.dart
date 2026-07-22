@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 
@@ -375,16 +376,11 @@ class _PaperCardState extends State<PaperCard> {
         Offset.zero & overlay.size,
       ),
       items: <PopupMenuEntry<void>>[
-        // Open / Reveal
+        // Open / Reveal — "Open PDF" is a non-clickable submenu parent.
         PopupMenuItem(
-          child: const Row(
-            children: [
-              Icon(Icons.open_in_new, size: 18),
-              SizedBox(width: 8),
-              Text('Open PDF'),
-            ],
-          ),
-          onTap: () => appState.openPaper(widget.paper),
+          padding: EdgeInsets.zero,
+          enabled: false, // parent not clickable; child handles hover/submenu
+          child: _OpenPdfMenuItem(appState: appState, paper: widget.paper),
         ),
         PopupMenuItem(
           child: const Row(
@@ -471,15 +467,15 @@ class _PaperCardState extends State<PaperCard> {
           child: Row(
             children: [
               Icon(
-                Icons.remove_circle_outline,
+                Icons.delete_outline,
                 size: 18,
                 color: Theme.of(context).colorScheme.error,
               ),
               const SizedBox(width: 8),
               Text(
                 isMultiSelection
-                    ? 'Remove $selectedCount from library'
-                    : 'Remove from library',
+                    ? 'Move $selectedCount to Trash'
+                    : 'Move to Trash',
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ],
@@ -558,9 +554,9 @@ class _PaperCardState extends State<PaperCard> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Remove Paper'),
+        title: const Text('Move to Trash'),
         content: Text(
-          'Remove "${widget.paper.title}" from the library? The PDF file on disk will not be deleted.',
+          'Move "${widget.paper.title}" to the Trash? The PDF file is moved to your system Trash (recoverable from there).',
         ),
         actions: [
           TextButton(
@@ -575,7 +571,7 @@ class _PaperCardState extends State<PaperCard> {
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.error,
             ),
-            child: const Text('Remove'),
+            child: const Text('Move to Trash'),
           ),
         ],
       ),
@@ -590,9 +586,9 @@ class _PaperCardState extends State<PaperCard> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Remove $count Papers'),
+        title: Text('Move $count Papers to Trash'),
         content: const Text(
-          'Remove the selected papers from the library? The PDF files on disk will not be deleted.',
+          'Move the selected papers to the Trash? Their PDF files are moved to your system Trash (recoverable from there).',
         ),
         actions: [
           TextButton(
@@ -607,7 +603,7 @@ class _PaperCardState extends State<PaperCard> {
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.error,
             ),
-            child: const Text('Remove'),
+            child: const Text('Move to Trash'),
           ),
         ],
       ),
@@ -742,6 +738,150 @@ class _AssignTagsMenuItemState extends State<_AssignTagsMenuItem> {
               Icon(Icons.label_outlined, size: 18),
               SizedBox(width: 8),
               Expanded(child: Text('Assign Tags')),
+              Icon(Icons.arrow_right, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "Open PDF" as a non-clickable submenu parent with a hover flyout:
+/// Open in app · Open with system default · Open with…
+class _OpenPdfMenuItem extends StatefulWidget {
+  final AppState appState;
+  final Paper paper;
+
+  const _OpenPdfMenuItem({required this.appState, required this.paper});
+
+  @override
+  State<_OpenPdfMenuItem> createState() => _OpenPdfMenuItemState();
+}
+
+class _OpenPdfMenuItemState extends State<_OpenPdfMenuItem> {
+  OverlayEntry? _overlayEntry;
+  Timer? _hoverTimer;
+  bool _isSubmenuOpen = false;
+
+  @override
+  void dispose() {
+    _cleanUp();
+    super.dispose();
+  }
+
+  void _cleanUp() {
+    _hoverTimer?.cancel();
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+    _isSubmenuOpen = false;
+  }
+
+  /// Run [action], then dismiss the submenu and the main context menu.
+  void _run(void Function() action) {
+    action();
+    _cleanUp();
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  Future<void> _pickAppAndOpen() async {
+    final appState = widget.appState;
+    final paper = widget.paper;
+    _cleanUp();
+    if (mounted) Navigator.of(context).pop(); // close the main menu first
+    const XTypeGroup typeGroup =
+        XTypeGroup(label: 'Applications', extensions: ['app', 'exe']);
+    final XFile? file = await openFile(acceptedTypeGroups: [typeGroup]);
+    if (file != null) {
+      await appState.openPaperWithApp(paper, file.path);
+    }
+  }
+
+  void _openSubmenu() {
+    if (_isSubmenuOpen || !mounted) return;
+
+    final RenderBox renderBox = context.findRenderObject() as RenderBox;
+    final size = renderBox.size;
+    final offset = renderBox.localToGlobal(Offset.zero);
+    final left = offset.dx + size.width;
+    final top = offset.dy;
+
+    _overlayEntry = OverlayEntry(
+      builder: (_) {
+        return Positioned(
+          left: left,
+          top: top,
+          child: MouseRegion(
+            onEnter: (_) => _hoverTimer?.cancel(),
+            onExit: (_) => _hoverTimer =
+                Timer(const Duration(milliseconds: 300), _cleanUp),
+            child: Material(
+              elevation: 4,
+              borderRadius: BorderRadius.circular(4),
+              color: Theme.of(context).cardColor,
+              child: IntrinsicWidth(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _submenuRow(Icons.picture_as_pdf_outlined, 'Open in app',
+                        () => _run(
+                            () => widget.appState.openPaperInApp(widget.paper))),
+                    _submenuRow(
+                        Icons.open_in_new,
+                        'Open with system default',
+                        () => _run(() => widget.appState
+                            .openPaperWithSystemDefault(widget.paper))),
+                    _submenuRow(Icons.apps, 'Open with…', _pickAppAndOpen),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    Overlay.of(context).insert(_overlayEntry!);
+    _isSubmenuOpen = true;
+  }
+
+  Widget _submenuRow(IconData icon, String label, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+        child: Row(
+          children: [
+            Icon(icon, size: 18),
+            const SizedBox(width: 8),
+            Text(label, style: Theme.of(context).textTheme.bodyMedium),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) {
+        _hoverTimer?.cancel();
+        _hoverTimer = Timer(const Duration(milliseconds: 50), _openSubmenu);
+      },
+      onExit: (_) {
+        _hoverTimer?.cancel();
+        _hoverTimer = Timer(const Duration(milliseconds: 300), _cleanUp);
+      },
+      child: InkWell(
+        onTap: _openSubmenu,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: Row(
+            children: [
+              Icon(Icons.open_in_new, size: 18),
+              SizedBox(width: 8),
+              Expanded(child: Text('Open PDF')),
               Icon(Icons.arrow_right, size: 18),
             ],
           ),

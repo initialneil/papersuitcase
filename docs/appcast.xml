@@ -6,41 +6,47 @@
     <description>Paper Suitcase release feed</description>
     <language>en</language>
     <item>
-      <title>Version 1.1.7 (macOS)</title>
+      <title>Version 1.1.8 (macOS)</title>
       <sparkle:os>macos</sparkle:os>
-      <pubDate>Tue, 21 Jul 2026 15:23:10 +0800</pubDate>
-      <sparkle:version>9</sparkle:version>
-      <sparkle:shortVersionString>1.1.7</sparkle:shortVersionString>
+      <pubDate>Wed, 22 Jul 2026 18:54:44 +0800</pubDate>
+      <sparkle:version>10</sparkle:version>
+      <sparkle:shortVersionString>1.1.8</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
       <description><![CDATA[
-        <h2>v1.1.7 — ACM / DOI links</h2>
+        <h2>v1.1.8 — Local imports, Trash, and fixes</h2>
         <ul>
-          <li>Paste an ACM Digital Library (dl.acm.org) or doi.org link in the search bar and hit <strong>Open</strong> to jump straight to the PDF in your browser</li>
-          <li>Publisher PDFs are behind a paywall/Cloudflare check, so the download runs in your browser (with your access) — then drag the PDF back in to import it</li>
+          <li><strong>Import local PDFs</strong>: paste a file path in the search bar, or drag &amp; drop a PDF — both now extract the title and file it into your library (drag-drop used to be a plain copy)</li>
+          <li><strong>Right-click → Open PDF</strong> is now a submenu: Open in app · Open with system default · Open with…</li>
+          <li><strong>Delete moves the PDF to the Trash</strong> (recoverable), and a restored file reappears instead of staying stuck</li>
+          <li>Empty folders now show in the sidebar</li>
+          <li>Fixed: importing or downloading a paper no longer makes the window vanish</li>
         </ul>
       ]]></description>
       <enclosure
-        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.7/PaperSuitcase-macOS-v1.1.7.zip"
-        length="26517809"
+        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.8/PaperSuitcase-macOS-v1.1.8.zip"
+        length="26528883"
         type="application/octet-stream"
-        sparkle:edSignature="XNKaPf12y9WCHZgokooxw7tiVwLO9wyJdjdbnPlQIf7ySrYCmzJSEaP/UmQWCaxumEnQ+AsF0n3Ogar2J9bWBQ=="
+        sparkle:edSignature="pbKYoGTUZcB4L3IENZqofxTGr8EnWp5gyG7f6eovr7nMeUXsSrfy9mhV8YECPf1PSEv38WybKPZo6bzR2F8ZDQ=="
       />
     </item>
     <item>
-      <title>Version 1.1.7 (Windows)</title>
+      <title>Version 1.1.8 (Windows)</title>
       <sparkle:os>windows</sparkle:os>
-      <pubDate>Tue, 21 Jul 2026 15:23:10 +0800</pubDate>
-      <sparkle:version>9</sparkle:version>
-      <sparkle:shortVersionString>1.1.7</sparkle:shortVersionString>
+      <pubDate>Wed, 22 Jul 2026 18:54:44 +0800</pubDate>
+      <sparkle:version>10</sparkle:version>
+      <sparkle:shortVersionString>1.1.8</sparkle:shortVersionString>
       <description><![CDATA[
-        <h2>v1.1.7 — ACM / DOI links</h2>
+        <h2>v1.1.8 — Local imports, Trash, and fixes</h2>
         <ul>
-          <li>Paste an ACM Digital Library (dl.acm.org) or doi.org link in the search bar and hit <strong>Open</strong> to jump straight to the PDF in your browser</li>
-          <li>Publisher PDFs are behind a paywall/Cloudflare check, so the download runs in your browser (with your access) — then drag the PDF back in to import it</li>
+          <li><strong>Import local PDFs</strong>: paste a file path in the search bar, or drag &amp; drop a PDF — both now extract the title and file it into your library (drag-drop used to be a plain copy)</li>
+          <li><strong>Right-click → Open PDF</strong> is now a submenu: Open in app · Open with system default · Open with…</li>
+          <li><strong>Delete moves the PDF to the Trash</strong> (recoverable), and a restored file reappears instead of staying stuck</li>
+          <li>Empty folders now show in the sidebar</li>
+          <li>Fixed: importing or downloading a paper no longer makes the window vanish</li>
         </ul>
       ]]></description>
       <enclosure
-        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.7/PaperSuitcase-Windows-v1.1.7-Setup.exe"
+        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.8/PaperSuitcase-Windows-v1.1.8-Setup.exe"
         type="application/octet-stream"
       />
     </item>

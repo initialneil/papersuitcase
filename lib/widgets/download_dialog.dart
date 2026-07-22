@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
-import 'package:window_manager/window_manager.dart';
 
 import '../models/download_task.dart';
 import '../models/entry.dart';
@@ -495,10 +494,11 @@ class _DownloadDialogState extends State<DownloadDialog> {
     final taskId = DateTime.now().microsecondsSinceEpoch.toString();
     appState.enqueueDownload(DownloadTask(id: taskId, title: editedTitle));
 
-    // Close the dialog and hide the window immediately. The actual work runs
-    // in the background; progress shows in the sidebar footer.
+    // Close the dialog; the download runs in the background with progress in
+    // the sidebar footer. Keep the window visible — hiding it stranded the app
+    // (there is no dock-reopen handler that calls windowManager.show()) and
+    // read as a crash.
     Navigator.of(context).pop();
-    unawaited(windowManager.hide());
 
     unawaited(_runDownload(
       appState: appState,
