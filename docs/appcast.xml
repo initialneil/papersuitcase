@@ -6,47 +6,41 @@
     <description>Paper Suitcase release feed</description>
     <language>en</language>
     <item>
-      <title>Version 1.1.8 (macOS)</title>
+      <title>Version 1.1.9 (macOS)</title>
       <sparkle:os>macos</sparkle:os>
-      <pubDate>Wed, 22 Jul 2026 18:54:44 +0800</pubDate>
-      <sparkle:version>10</sparkle:version>
-      <sparkle:shortVersionString>1.1.8</sparkle:shortVersionString>
+      <pubDate>Wed, 26 Aug 2026 10:34:25 +0800</pubDate>
+      <sparkle:version>11</sparkle:version>
+      <sparkle:shortVersionString>1.1.9</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
       <description><![CDATA[
-        <h2>v1.1.8 — Local imports, Trash, and fixes</h2>
+        <h2>v1.1.9 — Recent &amp; Read Later</h2>
         <ul>
-          <li><strong>Import local PDFs</strong>: paste a file path in the search bar, or drag &amp; drop a PDF — both now extract the title and file it into your library (drag-drop used to be a plain copy)</li>
-          <li><strong>Right-click → Open PDF</strong> is now a submenu: Open in app · Open with system default · Open with…</li>
-          <li><strong>Delete moves the PDF to the Trash</strong> (recoverable), and a restored file reappears instead of staying stuck</li>
-          <li>Empty folders now show in the sidebar</li>
-          <li>Fixed: importing or downloading a paper no longer makes the window vanish</li>
+          <li><strong>Recent</strong>: a new sidebar view of your most recently added papers — the past week (at least nine), with more loading as you scroll</li>
+          <li><strong>Read Later</strong>: flag any paper from its right-click menu and find them all under the new Read Later view</li>
         </ul>
       ]]></description>
       <enclosure
-        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.8/PaperSuitcase-macOS-v1.1.8.zip"
-        length="26528883"
+        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.9/PaperSuitcase-macOS-v1.1.9.zip"
+        length="26278661"
         type="application/octet-stream"
-        sparkle:edSignature="pbKYoGTUZcB4L3IENZqofxTGr8EnWp5gyG7f6eovr7nMeUXsSrfy9mhV8YECPf1PSEv38WybKPZo6bzR2F8ZDQ=="
+        sparkle:edSignature="W7QfWj/yOsrBf5Q2PaS8uvPzsYTNE7rmgOYSPsZUSWxvAd7V6xU1vtMM+DT6LW+SXM7vOEIcHonkdEBdiU9vAQ=="
       />
     </item>
     <item>
-      <title>Version 1.1.8 (Windows)</title>
+      <title>Version 1.1.9 (Windows)</title>
       <sparkle:os>windows</sparkle:os>
-      <pubDate>Wed, 22 Jul 2026 18:54:44 +0800</pubDate>
-      <sparkle:version>10</sparkle:version>
-      <sparkle:shortVersionString>1.1.8</sparkle:shortVersionString>
+      <pubDate>Wed, 26 Aug 2026 10:34:25 +0800</pubDate>
+      <sparkle:version>11</sparkle:version>
+      <sparkle:shortVersionString>1.1.9</sparkle:shortVersionString>
       <description><![CDATA[
-        <h2>v1.1.8 — Local imports, Trash, and fixes</h2>
+        <h2>v1.1.9 — Recent &amp; Read Later</h2>
         <ul>
-          <li><strong>Import local PDFs</strong>: paste a file path in the search bar, or drag &amp; drop a PDF — both now extract the title and file it into your library (drag-drop used to be a plain copy)</li>
-          <li><strong>Right-click → Open PDF</strong> is now a submenu: Open in app · Open with system default · Open with…</li>
-          <li><strong>Delete moves the PDF to the Trash</strong> (recoverable), and a restored file reappears instead of staying stuck</li>
-          <li>Empty folders now show in the sidebar</li>
-          <li>Fixed: importing or downloading a paper no longer makes the window vanish</li>
+          <li><strong>Recent</strong>: a new sidebar view of your most recently added papers — the past week (at least nine), with more loading as you scroll</li>
+          <li><strong>Read Later</strong>: flag any paper from its right-click menu and find them all under the new Read Later view</li>
         </ul>
       ]]></description>
       <enclosure
-        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.8/PaperSuitcase-Windows-v1.1.8-Setup.exe"
+        url="https://github.com/initialneil/papersuitcase/releases/download/v1.1.9/PaperSuitcase-Windows-v1.1.9-Setup.exe"
         type="application/octet-stream"
       />
     </item>

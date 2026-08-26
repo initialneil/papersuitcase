@@ -25,11 +25,28 @@ class TagSidebar extends StatelessWidget {
             children: [
               // All Papers item
               _AllPapersItem(
-                isSelected: appState.selectedTag == null &&
+                isSelected: appState.listView == PaperListView.all &&
+                    !appState.showDiscover &&
+                    appState.selectedTag == null &&
                     appState.selectedEntry == null &&
                     appState.searchQuery.isEmpty,
                 paperCount: appState.papers.length,
                 onTap: () => appState.selectAllPapersView(),
+              ),
+
+              // Recent + Read Later views
+              _SidebarNavItem(
+                icon: Icons.history,
+                label: 'Recent',
+                isSelected: appState.listView == PaperListView.recent,
+                onTap: () => appState.selectRecentView(),
+              ),
+              _SidebarNavItem(
+                icon: Icons.bookmarks_outlined,
+                label: 'Read Later',
+                count: appState.readLaterCount,
+                isSelected: appState.listView == PaperListView.readLater,
+                onTap: () => appState.selectReadLaterView(),
               ),
 
               // Discover button (only when logged in)
@@ -149,6 +166,69 @@ class _AllPapersItem extends StatelessWidget {
                   ),
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Generic top-section nav item (Recent / Read Later) — same look as All Papers,
+/// with an optional trailing count.
+class _SidebarNavItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final int? count;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _SidebarNavItem({
+    required this.icon,
+    required this.label,
+    this.count,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: isSelected
+          ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3)
+          : Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: isSelected
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              if (count != null && count! > 0)
+                Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                  ),
+                ),
             ],
           ),
         ),

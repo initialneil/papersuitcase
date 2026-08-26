@@ -449,6 +449,27 @@ class _PaperCardState extends State<PaperCard> {
           },
         ),
 
+        const PopupMenuDivider(),
+
+        // Read Later toggle
+        PopupMenuItem(
+          child: Row(
+            children: [
+              Icon(
+                widget.paper.readLater
+                    ? Icons.bookmark_remove_outlined
+                    : Icons.bookmark_add_outlined,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Text(widget.paper.readLater
+                  ? 'Remove from Read Later'
+                  : 'Add to Read Later'),
+            ],
+          ),
+          onTap: () => appState.toggleReadLater(widget.paper),
+        ),
+
         // Assign Tags from persistent context
         if (appState.lastActiveTagPath.isNotEmpty) ...[
           const PopupMenuDivider(),

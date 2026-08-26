@@ -47,6 +47,15 @@ class _NavigationState {
 }
 
 /// Main application state provider
+/// Special paper lists shown in the top sidebar section alongside a normal
+/// tag/entry/search selection.
+enum PaperListView { all, recent, readLater }
+
+/// Recent view initial page size: everything added in the last week, but never
+/// fewer than [minCount] (so the view is never near-empty on a quiet week).
+int recentInitialLimit(int weekCount, {int minCount = 9}) =>
+    weekCount < minCount ? minCount : weekCount;
+
 class AppState extends ChangeNotifier {
   final DatabaseService _db = DatabaseService();
   final PdfService _pdfService = PdfService();
@@ -63,6 +72,15 @@ class AppState extends ChangeNotifier {
   String? _selectedSubfolder;
   List<Tag> _lastActiveTagPath = [];
   String _searchQuery = '';
+
+  // Special sidebar list views (Recent / Read Later)
+  PaperListView _listView = PaperListView.all;
+  int _readLaterCount = 0;
+  // Recent view pagination state
+  static const int _recentPageSize = 9;
+  int _recentOffset = 0;
+  bool _recentHasMore = false;
+  bool _isLoadingMore = false;
 
   // Navigation History
   final List<_NavigationState> _history = [];
@@ -132,6 +150,10 @@ class AppState extends ChangeNotifier {
   String? get selectedSubfolder => _selectedSubfolder;
   List<Tag> get lastActiveTagPath => _lastActiveTagPath;
   String get searchQuery => _searchQuery;
+  PaperListView get listView => _listView;
+  int get readLaterCount => _readLaterCount;
+  bool get recentHasMore => _recentHasMore;
+  bool get isLoadingMore => _isLoadingMore;
   bool get isLoading => _isLoading;
   String? get error => _error;
   Set<int> get selectedPaperIds => _selectedPaperIds;
@@ -269,6 +291,7 @@ class AppState extends ChangeNotifier {
     if (!canGoBack) return;
 
     _isNavigatingHistory = true;
+    _listView = PaperListView.all;
     _historyIndex--;
     final state = _history[_historyIndex];
 
@@ -288,6 +311,7 @@ class AppState extends ChangeNotifier {
     if (!canGoForward) return;
 
     _isNavigatingHistory = true;
+    _listView = PaperListView.all;
     _historyIndex++;
     final state = _history[_historyIndex];
 
@@ -312,7 +336,17 @@ class AppState extends ChangeNotifier {
   Future<void> _loadPapers() async {
     _relatedTags = [];
 
-    if (_searchQuery.isNotEmpty) {
+    if (_listView == PaperListView.recent) {
+      final weekAgo = DateTime.now().subtract(const Duration(days: 7));
+      final limit = recentInitialLimit(
+          await _db.getRecentPaperCountSince(weekAgo),
+          minCount: _recentPageSize);
+      _papers = await _db.getRecentPapers(limit: limit);
+      _recentOffset = _papers.length;
+      _recentHasMore = _papers.length == limit;
+    } else if (_listView == PaperListView.readLater) {
+      _papers = await _db.getReadLaterPapers();
+    } else if (_searchQuery.isNotEmpty) {
       _papers = await _db.searchPapers(_searchQuery);
       _relatedTags = await _db.getRelatedTags(_searchQuery);
     } else if (_selectedTag != null && _selectedTag!.isUntagged) {
@@ -336,6 +370,7 @@ class AppState extends ChangeNotifier {
     }
 
     _untaggedCount = await _db.getUntaggedPaperCount();
+    _readLaterCount = await _db.getReadLaterCount();
     // Clear selection when loading new papers
     _selectedPaperIds.clear();
   }
@@ -785,6 +820,7 @@ class AppState extends ChangeNotifier {
   /// Select a tag to filter papers (clears entry selection)
   Future<void> selectTag(Tag? tag) async {
     _showDiscover = false;
+    _listView = PaperListView.all;
     _selectedTag = tag;
     _selectedEntry = null;
     _selectedSubfolder = null;
@@ -804,6 +840,7 @@ class AppState extends ChangeNotifier {
   /// Select an entry to filter papers (clears tag selection)
   Future<void> selectEntry(Entry? entry, {String? subfolder}) async {
     _showDiscover = false;
+    _listView = PaperListView.all;
     _selectedEntry = entry;
     _selectedSubfolder = subfolder;
     _selectedTag = null;
@@ -818,6 +855,7 @@ class AppState extends ChangeNotifier {
   /// Select all papers (clear entry, tag, and search)
   Future<void> selectAllPapersView() async {
     _showDiscover = false;
+    _listView = PaperListView.all;
     _selectedTag = null;
     _selectedEntry = null;
     _selectedSubfolder = null;
@@ -826,6 +864,73 @@ class AppState extends ChangeNotifier {
 
     _pushHistory();
     await _loadPapers();
+    notifyListeners();
+  }
+
+  /// Show the Recent view (recently-added papers, lazy-paginated).
+  Future<void> selectRecentView() async {
+    _showDiscover = false;
+    _listView = PaperListView.recent;
+    _selectedTag = null;
+    _selectedEntry = null;
+    _selectedSubfolder = null;
+    _lastActiveTagPath = [];
+    _searchQuery = '';
+
+    _pushHistory();
+    await _loadPapers();
+    notifyListeners();
+  }
+
+  /// Show the Read Later view (papers flagged via the context menu).
+  Future<void> selectReadLaterView() async {
+    _showDiscover = false;
+    _listView = PaperListView.readLater;
+    _selectedTag = null;
+    _selectedEntry = null;
+    _selectedSubfolder = null;
+    _lastActiveTagPath = [];
+    _searchQuery = '';
+
+    _pushHistory();
+    await _loadPapers();
+    notifyListeners();
+  }
+
+  /// Load the next page of Recent papers (called when the grid nears bottom).
+  Future<void> loadMoreRecent() async {
+    if (_listView != PaperListView.recent ||
+        _isLoadingMore ||
+        !_recentHasMore) {
+      return;
+    }
+    _isLoadingMore = true;
+    notifyListeners();
+
+    final more = await _db.getRecentPapers(
+        limit: _recentPageSize, offset: _recentOffset);
+    _papers = [..._papers, ...more];
+    _recentOffset += more.length;
+    _recentHasMore = more.length == _recentPageSize;
+    _isLoadingMore = false;
+    notifyListeners();
+  }
+
+  /// Toggle a paper's Read Later flag (from the context menu).
+  Future<void> toggleReadLater(Paper paper) async {
+    final next = !paper.readLater;
+    await _db.setReadLater(paper.id!, next);
+
+    // Reflect in-memory: update the loaded copy, or drop it if we're viewing
+    // the Read Later list and it was just un-flagged.
+    if (_listView == PaperListView.readLater && !next) {
+      _papers = _papers.where((p) => p.id != paper.id).toList();
+    } else {
+      _papers = _papers
+          .map((p) => p.id == paper.id ? p.copyWith(readLater: next) : p)
+          .toList();
+    }
+    _readLaterCount = await _db.getReadLaterCount();
     notifyListeners();
   }
 
@@ -846,6 +951,7 @@ class AppState extends ChangeNotifier {
   /// Update search query
   Future<void> setSearchQuery(String query) async {
     _showDiscover = false;
+    _listView = PaperListView.all;
     _searchQuery = query.trim();
 
     if (_searchQuery.isEmpty) {
@@ -867,6 +973,7 @@ class AppState extends ChangeNotifier {
 
   /// Clear all selection (Tag/Entry/Search)
   Future<void> clearSelection() async {
+    _listView = PaperListView.all;
     _selectedTag = null;
     _selectedEntry = null;
     _selectedSubfolder = null;
@@ -1355,6 +1462,7 @@ class AppState extends ChangeNotifier {
 
   void showDiscoverTab() {
     _showDiscover = true;
+    _listView = PaperListView.all;
     _viewingPaper = null;
     _isConfigMode = false;
     notifyListeners();

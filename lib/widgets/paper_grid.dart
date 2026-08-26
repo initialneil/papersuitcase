@@ -16,12 +16,32 @@ class PaperGrid extends StatefulWidget {
 
 class _PaperGridState extends State<PaperGrid> {
   final FocusNode _focusNode = FocusNode();
+  final ScrollController _scrollController = ScrollController();
   // _showBibtexPanel removed — now uses BibtexManager dialog
 
   @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  /// Load more Recent papers as the grid nears the bottom.
+  /// loadMoreRecent() no-ops unless the Recent view has more pages, so calling
+  /// it on every scroll tick is safe.
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 400) {
+      context.read<AppState>().loadMoreRecent();
+    }
   }
 
   Widget _buildEmptyState(BuildContext context) {
@@ -70,6 +90,7 @@ class _PaperGridState extends State<PaperGrid> {
               );
 
               return CustomScrollView(
+                controller: _scrollController,
                 slivers: [
                   // Papers
                   if (papers.isNotEmpty)
@@ -103,6 +124,20 @@ class _PaperGridState extends State<PaperGrid> {
                             onDoubleTap: () => appState.openPaper(paper),
                           );
                         }, childCount: papers.length),
+                      ),
+                    ),
+                  // Bottom spinner while lazily loading more Recent papers
+                  if (appState.isLoadingMore)
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.only(bottom: 24),
+                        child: Center(
+                          child: SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
                       ),
                     ),
                 ],

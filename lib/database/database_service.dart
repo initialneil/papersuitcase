@@ -37,7 +37,7 @@ class DatabaseService {
 
     return await openDatabase(
       dbPath,
-      version: 6,
+      version: 7,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -74,7 +74,8 @@ class DatabaseService {
         remote_id INTEGER,
         updated_at TEXT,
         deleted_at TEXT,
-        dirty INTEGER NOT NULL DEFAULT 1
+        dirty INTEGER NOT NULL DEFAULT 1,
+        read_later INTEGER NOT NULL DEFAULT 0
       )
     ''');
 
@@ -158,6 +159,10 @@ class DatabaseService {
       await db.execute('ALTER TABLE tags ADD COLUMN remote_id INTEGER');
       await db.execute('ALTER TABLE tags ADD COLUMN dirty INTEGER NOT NULL DEFAULT 1');
       await _backfillSyncKeys(db);
+    }
+    if (oldVersion < 7) {
+      await db.execute(
+        'ALTER TABLE papers ADD COLUMN read_later INTEGER NOT NULL DEFAULT 0');
     }
   }
 
@@ -281,6 +286,72 @@ class DatabaseService {
       papers.add(Paper.fromMap(map, tags: tags));
     }
     return papers;
+  }
+
+  /// Get recently-added papers, newest first, paginated.
+  /// Offset pagination over a stable `added_at DESC` order; an insert between
+  /// pages can skew the window by one row — acceptable for a "recent" view.
+  Future<List<Paper>> getRecentPapers({required int limit, int offset = 0}) async {
+    final db = await database;
+    final maps = await db.query('papers',
+        where: 'deleted_at IS NULL',
+        orderBy: 'added_at DESC',
+        limit: limit,
+        offset: offset);
+
+    List<Paper> papers = [];
+    for (final map in maps) {
+      final tags = await getTagsForPaper(map['id'] as int);
+      papers.add(Paper.fromMap(map, tags: tags));
+    }
+    return papers;
+  }
+
+  /// Count papers added on/after [since] (for sizing the Recent initial window).
+  Future<int> getRecentPaperCountSince(DateTime since) async {
+    final db = await database;
+    final result = await db.rawQuery(
+        'SELECT COUNT(*) as count FROM papers WHERE deleted_at IS NULL AND added_at >= ?',
+        [since.toIso8601String()]);
+    return result.first['count'] as int;
+  }
+
+  /// Get papers flagged Read Later, newest first.
+  Future<List<Paper>> getReadLaterPapers() async {
+    final db = await database;
+    final maps = await db.query('papers',
+        where: 'deleted_at IS NULL AND read_later = 1',
+        orderBy: 'added_at DESC');
+
+    List<Paper> papers = [];
+    for (final map in maps) {
+      final tags = await getTagsForPaper(map['id'] as int);
+      papers.add(Paper.fromMap(map, tags: tags));
+    }
+    return papers;
+  }
+
+  /// Count of Read Later papers (for the sidebar badge).
+  Future<int> getReadLaterCount() async {
+    final db = await database;
+    final result = await db.rawQuery(
+        'SELECT COUNT(*) as count FROM papers WHERE deleted_at IS NULL AND read_later = 1');
+    return result.first['count'] as int;
+  }
+
+  /// Flag/unflag a paper as Read Later. Local-only (not synced).
+  Future<void> setReadLater(int paperId, bool value) async {
+    final db = await database;
+    await db.update(
+      'papers',
+      {
+        'read_later': value ? 1 : 0,
+        'dirty': 1,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [paperId],
+    );
   }
 
   /// Get a paper by its exact title (case-insensitive)

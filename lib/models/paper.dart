@@ -20,6 +20,7 @@ class Paper {
   final DateTime? updatedAt;
   final DateTime? deletedAt;
   final bool dirty;
+  final bool readLater;
   List<Tag> tags;
 
   Paper({
@@ -41,6 +42,7 @@ class Paper {
     this.updatedAt,
     this.deletedAt,
     this.dirty = true,
+    this.readLater = false,
     List<Tag>? tags,
   }) : addedAt = addedAt ?? DateTime.now(),
        tags = tags ?? [];
@@ -90,6 +92,7 @@ class Paper {
       if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),
       if (deletedAt != null) 'deleted_at': deletedAt!.toIso8601String(),
       'dirty': dirty ? 1 : 0,
+      'read_later': readLater ? 1 : 0,
     };
   }
 
@@ -113,6 +116,7 @@ class Paper {
       updatedAt: map['updated_at'] != null ? DateTime.parse(map['updated_at'] as String) : null,
       deletedAt: map['deleted_at'] != null ? DateTime.parse(map['deleted_at'] as String) : null,
       dirty: map.containsKey('dirty') ? (map['dirty'] as int?) == 1 : true,
+      readLater: (map['read_later'] as int?) == 1,
       tags: tags,
     );
   }
@@ -136,6 +140,7 @@ class Paper {
     DateTime? updatedAt,
     DateTime? deletedAt,
     bool? dirty,
+    bool? readLater,
     List<Tag>? tags,
   }) {
     return Paper(
@@ -157,6 +162,7 @@ class Paper {
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
       dirty: dirty ?? this.dirty,
+      readLater: readLater ?? this.readLater,
       tags: tags ?? this.tags,
     );
   }
