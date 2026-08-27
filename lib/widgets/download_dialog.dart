@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -13,6 +14,88 @@ import '../providers/app_state.dart';
 import '../database/database_service.dart';
 import '../services/arxiv_service.dart';
 import '../services/pdf_service.dart';
+
+const _kTitleStopWords = {
+  'the', 'and', 'for', 'with', 'from', 'that', 'this', 'are',
+  'was', 'were', 'been', 'being', 'have', 'has', 'had', 'does',
+  'did', 'will', 'would', 'could', 'should', 'may', 'might',
+  'shall', 'can', 'need', 'dare', 'ought', 'used', 'using',
+  'based', 'via', 'through', 'into', 'over', 'under', 'between',
+  'each', 'every', 'both', 'more', 'most', 'other', 'some',
+  'such', 'than', 'very', 'just', 'about', 'also', 'only',
+};
+
+/// Significant (topical) words of a title: lowercased, longer than 3 chars,
+/// stop-words removed, de-duplicated. Used to score title relevance.
+Set<String> significantTitleWords(String title) {
+  return title
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^\w\s]'), ' ')
+      .split(RegExp(r'\s+'))
+      .where((w) => w.length > 3 && !_kTitleStopWords.contains(w))
+      .toSet();
+}
+
+/// Pick the default download folder for a new paper titled [title] by finding
+/// the most title-relevant existing paper (in a known entry) and returning its
+/// entry + entry-relative subfolder (`''` = entry root).
+///
+/// Relevance is an **IDF-weighted** overlap of significant title words, not a
+/// raw count: a word shared with few library titles (a distinctive keyword like
+/// "glove") weighs far more than one shared with many ("high", "performance"),
+/// so a folder that merely happens to share generic words doesn't win. A paper
+/// must still share at least [minOverlap] words (a floor against noise); among
+/// those, the highest weighted score wins. Null when nothing qualifies. Broader
+/// than dup-detection on purpose: topically-related, not near-identical.
+({int entryId, String subfolder})? suggestFolderByTitle(
+    String title, List<Paper> corpus, Set<int> knownEntryIds,
+    {int minOverlap = 2}) {
+  final qWords = significantTitleWords(title);
+  if (qWords.isEmpty) return null;
+
+  // Candidate papers (known entries) with their title word-sets, computed once.
+  final candidates = <(Paper, Set<String>)>[];
+  for (final paper in corpus) {
+    if (!knownEntryIds.contains(paper.entryId)) continue;
+    candidates.add((paper, significantTitleWords(paper.title)));
+  }
+  if (candidates.isEmpty) return null;
+
+  // IDF weight per query word: 1 + ln((N+1)/(df+1)). df = library titles
+  // containing it. The `1 +` floor means every shared word counts as overlap;
+  // the ln term adds bias so a rare keyword outweighs a common one (and it's
+  // never exactly 0, which would collapse on a tiny library).
+  final n = candidates.length;
+  final weight = <String, double>{};
+  for (final w in qWords) {
+    var df = 0;
+    for (final c in candidates) {
+      if (c.$2.contains(w)) df++;
+    }
+    weight[w] = 1 + math.log((n + 1) / (df + 1));
+  }
+
+  Paper? best;
+  double bestScore = 0;
+  for (final c in candidates) {
+    final shared = qWords.where(c.$2.contains).toList();
+    if (shared.length < minOverlap) continue;
+    var score = 0.0;
+    for (final w in shared) {
+      score += weight[w]!;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = c.$1;
+    }
+  }
+  if (best == null) return null;
+  final dir = p.dirname(best.filePath);
+  return (
+    entryId: best.entryId,
+    subfolder: (dir == '.' || dir.isEmpty) ? '' : dir,
+  );
+}
 
 /// Dialog for downloading papers from arXiv with smart context-aware suggestions
 /// and duplicate detection.
@@ -72,14 +155,20 @@ class _DownloadDialogState extends State<DownloadDialog> {
   List<String> _subfolderSuggestions = [];
   bool _isCustomSubfolder = false;
   List<String> _newTagNames = [];
+  // True once the user manually picks an Entry/Subfolder, so the fuzzy default
+  // (applied after the title/similar search resolves) stops overriding them.
+  bool _userPickedLocation = false;
 
   // Duplicate detection
   List<Paper> _similarPapers = [];
+  // Whole library, loaded once, for fuzzy folder-suggestion scoring
+  List<Paper> _corpus = [];
 
   @override
   void initState() {
     super.initState();
     _initContext();
+    _loadCorpus();
     _fetchMetadata();
     _titleController.addListener(_onTitleChanged);
   }
@@ -206,7 +295,10 @@ class _DownloadDialogState extends State<DownloadDialog> {
           widget.isDirectPdf ? '' : (_metadata?.arxivId ?? '');
       final similar = await _findSimilarPapers(title, arxivId);
       if (!mounted) return;
-      setState(() => _similarPapers = similar);
+      setState(() {
+        _similarPapers = similar;
+        _applyFuzzyDefaultLocation(title);
+      });
     });
   }
 
@@ -242,6 +334,7 @@ class _DownloadDialogState extends State<DownloadDialog> {
           _metadata = metadata;
           _titleController.text = metadata.title;
           _similarPapers = similar;
+          _applyFuzzyDefaultLocation(metadata.title);
           _isFetchingMetadata = false;
         });
       }
@@ -343,9 +436,50 @@ class _DownloadDialogState extends State<DownloadDialog> {
       _titleController.text = parsedTitle;
       _prefetchedPath = prefetched;
       _similarPapers = similar;
+      _applyFuzzyDefaultLocation(parsedTitle);
       _isFetchingMetadata = false;
       _fetchingStatus = '';
     });
+  }
+
+  /// Load every paper once so the fuzzy folder-suggestion can score against the
+  /// whole library (not just the current view, which may be a filtered list).
+  Future<void> _loadCorpus() async {
+    try {
+      final all = await DatabaseService().getAllPapers();
+      if (!mounted) return;
+      _corpus = all;
+      // Metadata may have arrived before the corpus finished loading — apply now.
+      if (_metadata != null) {
+        setState(() => _applyFuzzyDefaultLocation(_titleController.text.trim()));
+      }
+    } catch (_) {}
+  }
+
+  /// When the download was launched from a non-folder view (All Papers /
+  /// Recent / Read Later / a tag / search — no real entry is the current view),
+  /// default the destination to where the most title-relevant existing paper
+  /// lives: its entry + subfolder. A real source folder, or a location the user
+  /// already picked, is left untouched. Call inside a setState.
+  void _applyFuzzyDefaultLocation(String title) {
+    if (widget.contextEntry != null || _userPickedLocation || _corpus.isEmpty) {
+      return;
+    }
+    final appState = context.read<AppState>();
+    final loc = suggestFolderByTitle(title, _corpus,
+        {for (final e in appState.entries) if (e.id != null) e.id!});
+    if (loc == null) return;
+    final entry =
+        appState.entries.where((e) => e.id == loc.entryId).firstOrNull;
+    if (entry == null) return;
+    _selectedEntry = entry;
+    _buildSuggestions(appState); // suggestions for the matched entry
+    if (loc.subfolder.isNotEmpty &&
+        !_subfolderSuggestions.contains(loc.subfolder)) {
+      _subfolderSuggestions.insert(0, loc.subfolder);
+    }
+    _subfolderController.text = loc.subfolder;
+    _isCustomSubfolder = false;
   }
 
   /// Fuzzy search for existing papers by title keywords and arxiv ID
@@ -390,7 +524,7 @@ class _DownloadDialogState extends State<DownloadDialog> {
         .replaceAll(RegExp(r'[^\w\s]'), ' ')
         .split(RegExp(r'\s+'))
         .where((w) => w.length > 3) // skip short words
-        .where((w) => !_stopWords.contains(w))
+        .where((w) => !_kTitleStopWords.contains(w))
         .take(5) // top 5 significant words
         .toList();
 
@@ -418,16 +552,6 @@ class _DownloadDialogState extends State<DownloadDialog> {
 
     return results.take(5).toList(); // max 5 similar papers
   }
-
-  static const _stopWords = {
-    'the', 'and', 'for', 'with', 'from', 'that', 'this', 'are',
-    'was', 'were', 'been', 'being', 'have', 'has', 'had', 'does',
-    'did', 'will', 'would', 'could', 'should', 'may', 'might',
-    'shall', 'can', 'need', 'dare', 'ought', 'used', 'using',
-    'based', 'via', 'through', 'into', 'over', 'under', 'between',
-    'each', 'every', 'both', 'more', 'most', 'other', 'some',
-    'such', 'than', 'very', 'just', 'about', 'also', 'only',
-  };
 
   void _showAddTagDialog() {
     final controller = TextEditingController();
@@ -912,6 +1036,7 @@ class _DownloadDialogState extends State<DownloadDialog> {
                         ? null
                         : (entry) {
                             setState(() {
+                              _userPickedLocation = true;
                               _selectedEntry = entry;
                               _buildSuggestions(context.read<AppState>());
                             });
@@ -982,6 +1107,7 @@ class _DownloadDialogState extends State<DownloadDialog> {
                           onChanged: _isDownloading
                               ? null
                               : (value) {
+                                  _userPickedLocation = true;
                                   if (value == '__custom__') {
                                     setState(() {
                                       _isCustomSubfolder = true;
